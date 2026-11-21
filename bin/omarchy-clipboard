@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -e
+
+REAL_SOURCE="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$REAL_SOURCE")/.." && pwd)"
+ACTION="${1:-toggle}"
+
+export QML_IMPORT_PATH="$SCRIPT_DIR:$SCRIPT_DIR/vendor/usr/lib64/qt6/qml:${QML_IMPORT_PATH:-}"
+export OMARCHY_CLIPBOARD_PATH="$SCRIPT_DIR"
+export PATH="$HOME/.local/bin:$SCRIPT_DIR/vendor/usr/bin:$PATH"
+
+if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
+  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+fi
+
+CONFIG_FILE="$SCRIPT_DIR/main.qml"
+
+case "$ACTION" in
+  --daemon|daemon)
+    exec quickshell -p "$CONFIG_FILE"
+    ;;
+  toggle|open|close|status)
+    if quickshell ipc -p "$CONFIG_FILE" call clipboard "$ACTION" 2>/dev/null; then
+      exit 0
+    fi
+
+    quickshell -d -p "$CONFIG_FILE"
+
+    for i in {1..15}; do
+      sleep 0.1
+      if quickshell ipc -p "$CONFIG_FILE" call clipboard status >/dev/null 2>&1; then
+        break
+      fi
+    done
+
+    if [[ "$ACTION" != "close" && "$ACTION" != "status" ]]; then
+      quickshell ipc -p "$CONFIG_FILE" call clipboard open 2>/dev/null || true
+    fi
+    ;;
+  kill|stop)
+    quickshell kill -p "$CONFIG_FILE" 2>/dev/null || true
+    pkill -f "wl-paste .*--watch .*capture\\.sh" 2>/dev/null || true
+    ;;
+  *)
+    echo "Usage: omarchy-clipboard [toggle|open|close|status|daemon|kill]"
+    exit 1
+    ;;
+esac

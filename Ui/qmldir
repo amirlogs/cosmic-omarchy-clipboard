@@ -1,0 +1,7 @@
+module qs.Ui
+BorderOverlay 1.0 BorderOverlay.qml
+BorderSurface 1.0 BorderSurface.qml
+ConfirmDialog 1.0 ConfirmDialog.qml
+OverlayWindow 1.0 OverlayWindow.qml
+PointerMoveGate 1.0 PointerMoveGate.qml
+SizedImage 1.0 SizedImage.qml

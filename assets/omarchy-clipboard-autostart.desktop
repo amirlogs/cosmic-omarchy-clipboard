@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Omarchy Clipboard Daemon
+Comment=Omarchy Clipboard Daemon for Wayland / COSMIC
+Exec=omarchy-clipboard --daemon
+Terminal=false
+Type=Application
+X-GNOME-Autostart-enabled=true

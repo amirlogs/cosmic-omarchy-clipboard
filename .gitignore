@@ -1,0 +1,13 @@
+# Dependencies / packages
+vendor/usr/
+*.rpm
+
+# Quickshell and runtime logs
+*.log
+*.qslog
+.cache/
+
+# Editor / temporary files
+*.swp
+*~
+.directory
