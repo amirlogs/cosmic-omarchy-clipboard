@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -e
+umask 077
 
 REAL_SOURCE="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$REAL_SOURCE")/.." && pwd)"
@@ -14,31 +15,61 @@ if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
 fi
 
 CONFIG_FILE="$SCRIPT_DIR/main.qml"
+LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/omarchy-clipboard-$(id -u).lock"
+
+ipc() {
+  quickshell ipc -p "$CONFIG_FILE" call clipboard "$1" 2>/dev/null
+}
+
+running() {
+  quickshell ipc -p "$CONFIG_FILE" call clipboard status >/dev/null 2>&1
+}
+
+# Start the daemon under an exclusive lock. If another instance already holds
+# the lock this exits immediately, so a race between autostart and a keypress
+# can never produce two shells (and two capture watchers).
+start_daemon_bg() {
+  setsid flock -n "$LOCK_FILE" quickshell -p "$CONFIG_FILE" \
+    >/dev/null 2>&1 </dev/null &
+}
+
+wait_for_daemon() {
+  for _ in {1..20}; do
+    running && return 0
+    sleep 0.1
+  done
+  return 1
+}
 
 case "$ACTION" in
   --daemon|daemon)
-    exec quickshell -p "$CONFIG_FILE"
+    exec flock -n "$LOCK_FILE" quickshell -p "$CONFIG_FILE"
     ;;
-  toggle|open|close|status)
-    if quickshell ipc -p "$CONFIG_FILE" call clipboard "$ACTION" 2>/dev/null; then
+  status)
+    if running; then
+      ipc status
+      exit 0
+    fi
+    echo "stopped"
+    exit 1
+    ;;
+  toggle|open|close)
+    if ipc "$ACTION" >/dev/null 2>&1; then
       exit 0
     fi
 
-    quickshell -d -p "$CONFIG_FILE"
+    start_daemon_bg
+    wait_for_daemon || true
 
-    for i in {1..15}; do
-      sleep 0.1
-      if quickshell ipc -p "$CONFIG_FILE" call clipboard status >/dev/null 2>&1; then
-        break
-      fi
-    done
-
-    if [[ "$ACTION" != "close" && "$ACTION" != "status" ]]; then
-      quickshell ipc -p "$CONFIG_FILE" call clipboard open 2>/dev/null || true
+    if [[ "$ACTION" != "close" ]]; then
+      ipc open >/dev/null 2>&1 || true
     fi
     ;;
   kill|stop)
+    ipc close >/dev/null 2>&1 || true
     quickshell kill -p "$CONFIG_FILE" 2>/dev/null || true
+    # Watchers use pdeathsig, so they normally die with the shell; this is a
+    # fallback for a watcher orphaned by an older build.
     pkill -f "wl-paste .*--watch .*capture\\.sh" 2>/dev/null || true
     ;;
   *)

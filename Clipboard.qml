@@ -86,12 +86,16 @@ Item {
   }
 
   function loadHistory(raw) {
-    root.history = ClipboardHistory.parseHistory(raw)
+    var parsed = ClipboardHistory.parseHistory(raw)
+    root.history = parsed.entries
+    // Upgrade legacy entries once, then the file is a no-op on the next load.
+    if (parsed.migrated) Qt.callLater(root.saveHistory)
     if (root.opened) root.rebuildDisplay()
   }
 
   function saveHistory() {
-    historyFile.setText(JSON.stringify(root.history.slice(0, root.historyLimit), null, 2) + "\n")
+    // Pinned entries are kept outside the unpinned limit by serialize().
+    historyFile.setText(ClipboardHistory.serialize(root.history, root.historyLimit))
   }
 
   function addClipboardEntry(entry) {
@@ -120,7 +124,9 @@ Item {
   }
 
   function confirmClearHistory() {
-    root.history = ClipboardHistory.clearHistory()
+    // Pinned entries survive "clear history"; only an explicit "delete
+    // everything" action would pass true.
+    root.history = ClipboardHistory.clearHistory(root.history)
     root.saveHistory()
     root.selectedIndex = 0
     root.cursorActive = false
@@ -134,7 +140,8 @@ Item {
     if (index < 0 || index >= displayModel.count) return
 
     var row = displayModel.get(index)
-    root.history = ClipboardHistory.removeEntryAt(root.history, row.historyIndex)
+    var removed = ClipboardHistory.removeEntryById(root.history, row.id)
+    root.history = removed.history
     root.saveHistory()
 
     if (displayModel.count <= 1) {
@@ -148,6 +155,14 @@ Item {
     root.rebuildDisplay()
   }
 
+  function togglePinIndex(index) {
+    if (index < 0 || index >= displayModel.count) return
+    var row = displayModel.get(index)
+    root.history = ClipboardHistory.setPinned(root.history, row.id, !row.pinned)
+    root.saveHistory()
+    root.rebuildDisplay()
+  }
+
   function rebuildDisplay() {
     var rows = ClipboardHistory.displayRows(root.history, root.filterText, 50, Commons.I18n.t, Commons.I18n.tn, Commons.I18n.formatNumber)
 
@@ -155,6 +170,8 @@ Item {
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i]
       displayModel.append({
+        id: row.id,
+        pinned: row.pinned,
         entryType: row.entryType,
         fullText: row.fullText,
         previewText: row.previewText,
@@ -263,7 +280,15 @@ Item {
     Quickshell.execDetached([root.openScript, "--history-index", String(row.historyIndex)])
   }
 
-  Component.onCompleted: initProc.running = true
+  // Start the watchers directly. Their pdeathsig makes the kernel kill them
+  // when this shell exits, and the launcher's single-instance lock keeps a
+  // second shell from starting duplicate watchers, so no pkill sweep is
+  // needed (and the old sweep killed a healthy sibling instance).
+  Component.onCompleted: {
+    currentProc.running = true
+    textWatchProc.running = true
+    imageWatchProc.running = true
+  }
 
   ListModel { id: displayModel }
 
@@ -283,19 +308,8 @@ Item {
     onFileChanged: reload()
   }
 
-  // Reap watchers left behind by a previous shell instance, then start our
-  // own. The pdeathsig on the watchers makes the kernel kill them whenever
-  // the shell exits, however it exits, so no further lifecycle management.
-  Process {
-    id: initProc
-    command: ["pkill", "-f", "wl-paste .*--watch .*capture\\.sh"]
-    onExited: {
-      currentProc.running = true
-      textWatchProc.running = true
-      imageWatchProc.running = true
-    }
-  }
-
+  // The watchers are started from Component.onCompleted above. Keep the
+  // restart timer so a watcher that dies is brought back.
   Process {
     id: currentProc
     command: [root.captureScript]

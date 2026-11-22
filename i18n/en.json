@@ -1,0 +1,21 @@
+{
+  "common.cancel": "Cancel",
+  "common.confirm": "Confirm",
+  "common.delete": "Delete",
+  "common.search": "Search",
+  "common.noMatchesFor": "No matches for “%1”",
+  "clipboard.search": "Search clipboard…",
+  "clipboard.empty": "Clipboard history is empty",
+  "clipboard.deleteHistory": "Delete all clipboard history? Pinned entries are kept.",
+  "clipboard.files": {
+    "one": "%1 file",
+    "other": "%1 files"
+  },
+  "clipboard.image": "Image",
+  "clipboard.imageFrom": "Image from %1",
+  "clipboard.screenshotFrom": "Screenshot from %1",
+  "clipboard.pin": "Pin",
+  "clipboard.unpin": "Unpin",
+  "clipboard.pinned": "Pinned",
+  "clipboard.history": "History"
+}

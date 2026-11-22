@@ -30,5 +30,10 @@ Scope {
     function status(): string {
       return clipboard.opened ? "opened" : "closed"
     }
+
+    function togglePin(): string {
+      clipboard.togglePinIndex(clipboard.selectedIndex)
+      return "ok"
+    }
   }
 }

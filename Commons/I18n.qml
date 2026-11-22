@@ -16,8 +16,22 @@ import "Numbers.js" as Numbers
 QtObject {
   id: root
 
-  readonly property string omarchyPath: Quickshell.env("OMARCHY_PATH")
+  readonly property string omarchyPath: Quickshell.env("OMARCHY_PATH") || ""
   readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
+
+  // The clipboard ships its own English catalog so the UI never renders raw
+  // keys when Omarchy's catalogs are not installed (OMARCHY_PATH unset) or are
+  // incomplete. Omarchy's catalog, when present, layers on top of this one.
+  readonly property string pluginPath: {
+    var env = Quickshell.env("OMARCHY_CLIPBOARD_PATH")
+    if (env && env.length > 0) return env
+    var url = String(Qt.resolvedUrl("."))
+    if (url.indexOf("file://") === 0) url = url.substring(7)
+    url = url.replace(/\/+$/, "")
+    url = url.replace(/\/Commons$/, "")
+    return url.replace(/\/qs$/, "")
+  }
+  readonly property string bundledCatalogPath: root.pluginPath + "/i18n/en.json"
 
   readonly property string language: languageCode(languageFile.text)
   readonly property var localeSettings: parseCatalog(registryFile.text)[root.language] || ({})
@@ -29,10 +43,12 @@ QtObject {
 
   // Reading text loads the catalog on the first lookup. These bindings
   // also rebuild the maps when a watched catalog changes.
+  readonly property var bundledStrings: parseCatalog(bundledCatalogFile.text)
   readonly property var englishStrings: parseCatalog(englishCatalogFile.text)
   readonly property var languageStrings: parseCatalog(languageCatalogFile.text)
   readonly property var strings: {
     var merged = ({})
+    for (var k0 in root.bundledStrings) merged[k0] = root.bundledStrings[k0]
     for (var k in root.englishStrings) merged[k] = root.englishStrings[k]
     for (var k2 in root.languageStrings) merged[k2] = root.languageStrings[k2]
     return merged
@@ -87,15 +103,19 @@ QtObject {
     path: Quickshell.env("OMARCHY_LANGUAGE_FILE") || (root.configHome + "/omarchy/language")
   }
 
+  property WatchedFile bundledCatalogFile: WatchedFile {
+    path: root.bundledCatalogPath
+  }
+
   property WatchedFile englishCatalogFile: WatchedFile {
-    path: root.omarchyPath + "/default/i18n/en/shell.json"
+    path: root.omarchyPath.length > 0 ? (root.omarchyPath + "/default/i18n/en/shell.json") : ""
   }
 
   property WatchedFile languageCatalogFile: WatchedFile {
-    path: root.omarchyPath + "/default/i18n/" + root.language + "/shell.json"
+    path: root.omarchyPath.length > 0 ? (root.omarchyPath + "/default/i18n/" + root.language + "/shell.json") : ""
   }
 
   property WatchedFile registryFile: WatchedFile {
-    path: root.omarchyPath + "/default/i18n/locales.json"
+    path: root.omarchyPath.length > 0 ? (root.omarchyPath + "/default/i18n/locales.json") : ""
   }
 }
