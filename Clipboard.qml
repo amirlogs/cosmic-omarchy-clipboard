@@ -28,6 +28,18 @@ Item {
   property bool cursorActive: false
   property bool clearConfirmOpen: false
   property var history: []
+  property string activeTab: "history"
+  property var pendingUndo: null
+  property string toastText: ""
+  property bool toastCanUndo: false
+
+  readonly property int pinnedCount: {
+    var n = 0
+    for (var i = 0; i < root.history.length; i++)
+      if (root.history[i] && root.history[i].pinned === true) n++
+    return n
+  }
+  readonly property int historyCount: Math.max(0, root.history.length - root.pinnedCount)
 
   property string historyPath: Quickshell.env("HOME") + "/.local/state/omarchy/clipboard-history.json"
   property string captureScript: {
@@ -62,6 +74,8 @@ Item {
     root.filterText = ""
     root.selectedIndex = 0
     root.cursorActive = true
+    root.activeTab = "history"
+    root.clearToast()
     root.disarmPointer()
     root.rebuildDisplay()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -69,12 +83,69 @@ Item {
 
   function close() {
     root.cancelClearHistory()
+    root.clearToast()
     root.opened = false
   }
 
   function toggle() {
     if (root.opened) root.close()
     else root.open("{}")
+  }
+
+  function switchTab(tab) {
+    if (tab !== "history" && tab !== "pinned") return
+    root.activeTab = tab
+    root.selectedIndex = 0
+    root.cursorActive = true
+    root.disarmPointer()
+    root.rebuildDisplay()
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function showToast(message, canUndo) {
+    root.toastText = message
+    root.toastCanUndo = canUndo === true
+    toastTimer.restart()
+  }
+
+  function clearToast() {
+    root.toastText = ""
+    root.toastCanUndo = false
+    root.pendingUndo = null
+    toastTimer.stop()
+  }
+
+  function undoDelete() {
+    var pending = root.pendingUndo
+    if (!pending || !pending.entry) {
+      root.clearToast()
+      return
+    }
+
+    // If the same content was copied again after the deletion, keep the new
+    // entry instead of restoring a duplicate.
+    var key = ClipboardHistory.entryKey(pending.entry)
+    var alreadyThere = false
+    for (var i = 0; i < root.history.length; i++) {
+      if (ClipboardHistory.entryKey(root.history[i]) === key) { alreadyThere = true; break }
+    }
+    if (!alreadyThere)
+      root.history = ClipboardHistory.restoreEntry(root.history, pending.entry, pending.index)
+    root.saveHistory()
+
+    var targetTab = pending.entry.pinned === true ? "pinned" : "history"
+    if (root.activeTab !== targetTab) {
+      root.activeTab = targetTab
+      root.selectedIndex = 0
+    }
+    root.rebuildDisplay()
+    for (var j = 0; j < displayModel.count; j++) {
+      if (displayModel.get(j).id === pending.entry.id) { root.selectedIndex = j; break }
+    }
+    root.cursorActive = displayModel.count > 0
+    root.disarmPointer()
+    root.clearToast()
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   function normalizeEntry(value) {
@@ -112,7 +183,7 @@ Item {
   }
 
   function requestClearHistory() {
-    if (root.history.length === 0) return
+    if (root.historyCount === 0) return
     clearConfirm.selectedIndex = 1
     root.clearConfirmOpen = true
   }
@@ -127,12 +198,14 @@ Item {
     // Pinned entries survive "clear history"; only an explicit "delete
     // everything" action would pass true.
     root.history = ClipboardHistory.clearHistory(root.history)
+    root.pendingUndo = null
     root.saveHistory()
     root.selectedIndex = 0
     root.cursorActive = false
     root.disarmPointer()
     root.clearConfirmOpen = false
     root.rebuildDisplay()
+    root.showToast(Commons.I18n.t("clipboard.historyCleared", "History cleared"), false)
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -141,7 +214,9 @@ Item {
 
     var row = displayModel.get(index)
     var removed = ClipboardHistory.removeEntryById(root.history, row.id)
+    if (!removed.removed) return
     root.history = removed.history
+    root.pendingUndo = { entry: removed.removed, index: removed.index }
     root.saveHistory()
 
     if (displayModel.count <= 1) {
@@ -153,18 +228,24 @@ Item {
 
     root.disarmPointer()
     root.rebuildDisplay()
+    root.showToast(Commons.I18n.t("clipboard.deleted", "Entry deleted"), true)
   }
 
   function togglePinIndex(index) {
     if (index < 0 || index >= displayModel.count) return
     var row = displayModel.get(index)
-    root.history = ClipboardHistory.setPinned(root.history, row.id, !row.pinned)
+    var wasPinned = row.pinned === true
+    root.history = ClipboardHistory.setPinned(root.history, row.id, !wasPinned)
     root.saveHistory()
     root.rebuildDisplay()
+    if (displayModel.count === 0) root.cursorActive = false
+    root.showToast(wasPinned
+      ? Commons.I18n.t("clipboard.unpinned", "Unpinned")
+      : Commons.I18n.t("clipboard.pinned", "Pinned"), false)
   }
 
   function rebuildDisplay() {
-    var rows = ClipboardHistory.displayRows(root.history, root.filterText, 50, Commons.I18n.t, Commons.I18n.tn, Commons.I18n.formatNumber)
+    var rows = ClipboardHistory.displayRows(root.history, root.filterText, 50, Commons.I18n.t, Commons.I18n.tn, Commons.I18n.formatNumber, root.activeTab)
 
     displayModel.clear()
     for (var i = 0; i < rows.length; i++) {
@@ -350,6 +431,13 @@ Item {
     }
   }
 
+  Timer {
+    id: toastTimer
+    interval: 4500
+    repeat: false
+    onTriggered: root.clearToast()
+  }
+
   OverlayWindow {
     id: panel
     shown: root.opened
@@ -393,6 +481,21 @@ Item {
           if (event.key === Qt.Key_Escape) {
             if (root.filterText) root.setFilter("")
             else root.close()
+            event.accepted = true
+          } else if ((event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)) {
+            root.switchTab(root.activeTab === "history" ? "pinned" : "history")
+            event.accepted = true
+          } else if ((event.modifiers & Qt.AltModifier) && event.key === Qt.Key_1) {
+            root.switchTab("history")
+            event.accepted = true
+          } else if ((event.modifiers & Qt.AltModifier) && event.key === Qt.Key_2) {
+            root.switchTab("pinned")
+            event.accepted = true
+          } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_P) {
+            if (root.cursorActive) root.togglePinIndex(root.selectedIndex)
+            event.accepted = true
+          } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_Z) {
+            if (root.pendingUndo) root.undoDelete()
             event.accepted = true
           } else if (Util.editsFilter(event, root.filterText)) {
             root.setFilter(Util.editedFilter(event, root.filterText))
@@ -465,17 +568,64 @@ Item {
           radius: root.cornerRadius
           color: "transparent"
 
-          Text {
-            textFormat: Text.PlainText
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.filterText || Commons.I18n.t("clipboard.search")
-            color: root.foreground
-            opacity: root.filterText ? 1 : 0.58
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.heading
-            elide: Text.ElideRight
+          Row {
+            anchors.fill: parent
+            spacing: Style.space(12)
+
+            Text {
+              textFormat: Text.PlainText
+              width: parent.width - tabBar.width - parent.spacing
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.filterText || Commons.I18n.t("clipboard.search")
+              color: root.foreground
+              opacity: root.filterText ? 1 : 0.58
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.heading
+              elide: Text.ElideRight
+            }
+
+            Row {
+              id: tabBar
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(6)
+
+              Repeater {
+                model: [
+                  { key: "history", label: Commons.I18n.t("clipboard.history", "History"), count: root.historyCount },
+                  { key: "pinned", label: Commons.I18n.t("clipboard.pinned", "Pinned"), count: root.pinnedCount }
+                ]
+
+                Rectangle {
+                  required property var modelData
+                  readonly property bool active: root.activeTab === modelData.key
+
+                  width: tabLabel.implicitWidth + Style.space(18)
+                  height: Math.max(Style.space(28), root.headerHeight - Style.space(4))
+                  radius: root.cornerRadius
+                  color: active ? root.selectedBackground : "transparent"
+                  border.width: active ? Style.normalBorderWidth : 0
+                  border.color: active ? Util.alpha(root.border, 0.35) : "transparent"
+
+                  Text {
+                    id: tabLabel
+                    anchors.centerIn: parent
+                    textFormat: Text.PlainText
+                    text: modelData.count > 0 ? (modelData.label + " (" + modelData.count + ")") : modelData.label
+                    color: active ? root.selectedText : root.foreground
+                    opacity: active ? 1.0 : 0.65
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    font.weight: active ? Font.DemiBold : Font.Normal
+                  }
+
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.switchTab(modelData.key)
+                  }
+                }
+              }
+            }
           }
         }
 
@@ -504,51 +654,23 @@ Item {
                 delegate: Rectangle {
                   id: row
                   required property int index
+                  required property string id
+                  required property bool pinned
                   required property string entryType
                   required property string previewText
                   required property string fullText
                   required property string previewImage
 
                   readonly property bool hasCursor: root.cursorActive && index === root.selectedIndex
+                  readonly property bool showActions: hasCursor || rowMouse.containsMouse || row.pinned
 
                   width: ListView.view.width
                   height: root.rowHeight
                   radius: root.cornerRadius
                   color: hasCursor ? root.selectedBackground : "transparent"
 
-                  Row {
-                    anchors.fill: parent
-                    anchors.leftMargin: Style.space(12)
-                    anchors.rightMargin: Style.space(12)
-                    anchors.topMargin: Style.space(8)
-                    anchors.bottomMargin: Style.space(8)
-                    spacing: Style.space(10)
-
-                    SizedImage {
-                      visible: parent.parent.previewImage.length > 0
-                      width: visible ? parent.height : 0
-                      height: parent.height
-                      url: parent.parent.previewImage
-                      asynchronous: true
-                      smooth: true
-                    }
-
-                    Text {
-                      textFormat: Text.PlainText
-                      width: parent.width - (parent.parent.previewImage.length > 0 ? parent.height + parent.spacing : 0)
-                      height: parent.height
-                      text: parent.parent.previewText
-                      color: parent.parent.hasCursor ? root.selectedText : root.foreground
-                      font.family: root.fontFamily
-                      font.pixelSize: Style.font.title
-                      opacity: parent.parent.entryType === "image" || parent.parent.entryType === "file" ? 0.72 : 1.0
-                      elide: Text.ElideRight
-                      wrapMode: Text.NoWrap
-                      verticalAlignment: Text.AlignVCenter
-                    }
-                  }
-
                   MouseArea {
+                    id: rowMouse
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
@@ -559,6 +681,104 @@ Item {
                       root.cursorActive = true
                       root.selectedIndex = row.index
                       root.activateIndex(row.index)
+                    }
+                  }
+
+                  Row {
+                    anchors.fill: parent
+                    anchors.leftMargin: Style.space(12)
+                    anchors.rightMargin: Style.space(10)
+                    anchors.topMargin: Style.space(8)
+                    anchors.bottomMargin: Style.space(8)
+                    spacing: Style.space(10)
+
+                    SizedImage {
+                      visible: row.previewImage.length > 0
+                      width: visible ? parent.height : 0
+                      height: parent.height
+                      url: row.previewImage
+                      asynchronous: true
+                      smooth: true
+                    }
+
+                    Text {
+                      textFormat: Text.PlainText
+                      width: parent.width - (row.previewImage.length > 0 ? parent.height + parent.spacing : 0) - (rowActions.visible ? rowActions.width + parent.spacing : 0)
+                      height: parent.height
+                      text: row.previewText
+                      color: row.hasCursor ? root.selectedText : root.foreground
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.title
+                      opacity: row.entryType === "image" || row.entryType === "file" ? 0.72 : 1.0
+                      elide: Text.ElideRight
+                      wrapMode: Text.NoWrap
+                      verticalAlignment: Text.AlignVCenter
+                    }
+
+                    Row {
+                      id: rowActions
+                      visible: row.showActions
+                      anchors.verticalCenter: parent.verticalCenter
+                      spacing: Style.space(4)
+
+                      Rectangle {
+                        width: Style.space(26)
+                        height: Style.space(26)
+                        radius: Math.max(4, root.cornerRadius - 4)
+                        color: pinActionMouse.containsMouse ? Util.alpha(root.foreground, 0.14) : "transparent"
+
+                        Text {
+                          anchors.centerIn: parent
+                          text: row.pinned ? "󰐃" : "󰐄"
+                          color: row.pinned ? root.selectedText : root.foreground
+                          opacity: row.pinned ? 1.0 : 0.72
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.body
+                        }
+
+                        MouseArea {
+                          id: pinActionMouse
+                          anchors.fill: parent
+                          hoverEnabled: true
+                          cursorShape: Qt.PointingHandCursor
+                          onClicked: function(mouse) {
+                            mouse.accepted = true
+                            root.cursorActive = true
+                            root.selectedIndex = row.index
+                            root.togglePinIndex(row.index)
+                          }
+                        }
+                      }
+
+                      Rectangle {
+                        visible: row.hasCursor || rowMouse.containsMouse
+                        width: Style.space(26)
+                        height: Style.space(26)
+                        radius: Math.max(4, root.cornerRadius - 4)
+                        color: deleteActionMouse.containsMouse ? Util.alpha(root.foreground, 0.14) : "transparent"
+
+                        Text {
+                          anchors.centerIn: parent
+                          text: "󰆴"
+                          color: root.foreground
+                          opacity: 0.72
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.body
+                        }
+
+                        MouseArea {
+                          id: deleteActionMouse
+                          anchors.fill: parent
+                          hoverEnabled: true
+                          cursorShape: Qt.PointingHandCursor
+                          onClicked: function(mouse) {
+                            mouse.accepted = true
+                            root.cursorActive = true
+                            root.selectedIndex = row.index
+                            root.removeDisplayIndex(row.index)
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -631,7 +851,11 @@ Item {
 
             Text {
               textFormat: Text.PlainText
-              text: root.history.length === 0 ? Commons.I18n.t("clipboard.empty") : Commons.I18n.t("common.noMatchesFor").arg(root.filterText)
+              text: root.filterText
+                ? Commons.I18n.t("common.noMatchesFor").arg(root.filterText)
+                : (root.activeTab === "pinned"
+                  ? Commons.I18n.t("clipboard.emptyPinned", "No pinned entries")
+                  : Commons.I18n.t("clipboard.empty"))
               color: root.foreground
               opacity: 0.7
               font.family: root.fontFamily
@@ -639,6 +863,62 @@ Item {
               horizontalAlignment: Text.AlignHCenter
               width: parent.width
               elide: Text.ElideRight
+            }
+          }
+        }
+      }
+
+      BorderSurface {
+        visible: root.toastText.length > 0
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: root.contentMargin
+        z: 15
+        width: toastRow.implicitWidth + Style.space(24)
+        height: Style.space(34)
+        radius: root.cornerRadius
+        color: root.background
+        borderSpec: Border.flat(Util.alpha(root.border, 0.45), Style.normalBorderWidth)
+
+        Row {
+          id: toastRow
+          anchors.centerIn: parent
+          spacing: Style.space(12)
+
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            text: root.toastText
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
+
+          Rectangle {
+            visible: root.toastCanUndo
+            anchors.verticalCenter: parent.verticalCenter
+            width: undoLabel.implicitWidth + Style.space(14)
+            height: Style.space(24)
+            radius: Math.max(4, root.cornerRadius - 4)
+            color: undoMouse.containsMouse ? root.selectedBackground : Util.alpha(root.foreground, 0.1)
+
+            Text {
+              id: undoLabel
+              anchors.centerIn: parent
+              textFormat: Text.PlainText
+              text: Commons.I18n.t("clipboard.undo", "Undo")
+              color: root.selectedText
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              font.weight: Font.DemiBold
+            }
+
+            MouseArea {
+              id: undoMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.undoDelete()
             }
           }
         }

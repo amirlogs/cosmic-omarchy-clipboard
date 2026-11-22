@@ -465,9 +465,10 @@ function cappedEntry(entry) {
   return capped
 }
 
-function displayRows(history, query, limit, tr, trn, fmt) {
+function displayRows(history, query, limit, tr, trn, fmt, mode) {
   var values = Array.isArray(history) ? history : []
   var needle = String(query || "").trim().toLowerCase()
+  var tab = String(mode || "all")
   var max = limit === undefined || limit === null ? 50 : Number(limit)
   if (isNaN(max)) max = 50
   max = Math.max(0, max)
@@ -478,6 +479,8 @@ function displayRows(history, query, limit, tr, trn, fmt) {
   for (var i = 0; i < values.length; i++) {
     var entry = cappedEntry(normalizeEntry(values[i], undefined, i))
     if (!entry) continue
+    if (tab === "history" && entry.pinned === true) continue
+    if (tab === "pinned" && entry.pinned !== true) continue
     if (needle && searchableText(entry).toLowerCase().indexOf(needle) < 0) continue
 
     var paths = filePaths(entry)

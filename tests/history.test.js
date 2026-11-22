@@ -171,6 +171,63 @@ test("displayRows exposes stable ids and pinned state", () => {
   assert.equal(rows[1].id, history[1].id)
 })
 
+test("displayRows filters by tab and keeps original history indices", () => {
+  let history = H.addEntry([], { type: "text", text: "a" }, 500, NOW)
+  history = H.addEntry(history, { type: "text", text: "b", pinned: true }, 500, NOW + 1000)
+  history = H.addEntry(history, { type: "text", text: "c" }, 500, NOW + 2000)
+
+  const all = H.displayRows(history, "", 50, undefined, undefined, undefined, "all")
+  const unpinned = H.displayRows(history, "", 50, undefined, undefined, undefined, "history")
+  const pinned = H.displayRows(history, "", 50, undefined, undefined, undefined, "pinned")
+
+  assert.deepEqual(all.map(r => r.previewText), ["c", "b", "a"])
+  assert.deepEqual(unpinned.map(r => r.previewText), ["c", "a"])
+  assert.deepEqual(pinned.map(r => r.previewText), ["b"])
+  assert.equal(pinned[0].index, 1)
+  assert.equal(unpinned[1].index, 2)
+})
+
+test("tab filtering still applies the search query", () => {
+  let history = H.addEntry([], { type: "text", text: "alpha", pinned: true }, 500, NOW)
+  history = H.addEntry(history, { type: "text", text: "alphabet" }, 500, NOW + 1000)
+  history = H.addEntry(history, { type: "text", text: "beta" }, 500, NOW + 2000)
+
+  const pinned = H.displayRows(history, "alpha", 50, undefined, undefined, undefined, "pinned")
+  const unpinned = H.displayRows(history, "alpha", 50, undefined, undefined, undefined, "history")
+  assert.deepEqual(pinned.map(r => r.previewText), ["alpha"])
+  assert.deepEqual(unpinned.map(r => r.previewText), ["alphabet"])
+})
+
+test("pin and unpin keep array order and metadata", () => {
+  let history = H.addEntry([], { type: "text", text: "a" }, 500, NOW)
+  const id = history[0].id
+  history = H.addEntry(history, { type: "text", text: "b" }, 500, NOW + 1000)
+
+  const pinned = H.setPinned(history, id, true, NOW + 2000)
+  assert.deepEqual(pinned.map(e => e.text), ["b", "a"])
+  assert.equal(pinned[1].pinned, true)
+  assert.equal(pinned[1].createdAt, ISO)
+
+  const unpinned = H.setPinned(pinned, id, false, NOW + 3000)
+  assert.deepEqual(unpinned.map(e => e.text), ["b", "a"])
+  assert.equal(unpinned[1].pinned, false)
+})
+
+test("deleted pinned entries restore with pin state and position", () => {
+  let history = H.addEntry([], { type: "text", text: "a" }, 500, NOW)
+  history = H.addEntry(history, { type: "text", text: "b", pinned: true }, 500, NOW + 1000)
+  history = H.addEntry(history, { type: "text", text: "c" }, 500, NOW + 2000)
+
+  const removed = H.removeEntryById(history, history[1].id)
+  assert.equal(removed.index, 1)
+  assert.equal(removed.removed.pinned, true)
+
+  const restored = H.restoreEntry(removed.history, removed.removed, removed.index)
+  assert.deepEqual(restored.map(e => e.text), ["c", "b", "a"])
+  assert.equal(restored[1].pinned, true)
+  assert.equal(restored[1].createdAt, new Date(NOW + 1000).toISOString())
+})
+
 test("serialize keeps pinned entries outside the unpinned limit", () => {
   const history = [
     { type: "text", text: "pinned", pinned: true },
