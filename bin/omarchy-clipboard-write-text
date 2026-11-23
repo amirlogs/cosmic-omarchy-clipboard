@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Write text to the Wayland clipboard, optionally marking it so capture.sh
+# suppresses the feedback event instead of creating a duplicate entry.
+#
+#   omarchy-clipboard-write-text --suppress --source editor --file /path/to/tmp --cleanup
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SUPPRESS=false
+SOURCE="editor"
+FILE=""
+CLEANUP=false
+
+while (( $# > 0 )); do
+  case "$1" in
+    --suppress) SUPPRESS=true; shift ;;
+    --source) SOURCE="${2:-editor}"; shift 2 ;;
+    --file) FILE="${2:-}"; shift 2 ;;
+    --cleanup) CLEANUP=true; shift ;;
+    *) shift ;;
+  esac
+done
+
+cleanup() {
+  if [[ $CLEANUP == "true" && -n $FILE ]]; then
+    rm -f -- "$FILE"
+  fi
+}
+trap cleanup EXIT
+
+if [[ -n $FILE ]]; then
+  [[ -r $FILE ]] || exit 1
+  if [[ $SUPPRESS == "true" ]]; then
+    "$SCRIPT_DIR/omarchy-clipboard-mark-write" --mode suppress --source "$SOURCE" --ttl 2 < "$FILE"
+  fi
+  wl-copy < "$FILE"
+else
+  tmp=$(mktemp)
+  trap 'rm -f -- "$tmp"' EXIT
+  cat > "$tmp"
+  if [[ $SUPPRESS == "true" ]]; then
+    "$SCRIPT_DIR/omarchy-clipboard-mark-write" --mode suppress --source "$SOURCE" --ttl 2 < "$tmp"
+  fi
+  wl-copy < "$tmp"
+fi

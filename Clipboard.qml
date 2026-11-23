@@ -6,6 +6,7 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "ClipboardHistory.js" as ClipboardHistory
+import "EditorEngine.js" as EditorEngine
 
 Item {
   id: root
@@ -33,6 +34,11 @@ Item {
   property var pendingUndo: null
   property string toastText: ""
   property bool toastCanUndo: false
+  property var editorState: EditorEngine.createState("", "")
+  property int editorRevision: 0
+  property bool editorSearchOpen: false
+  property string editorSearchQuery: ""
+  property bool _syncingEditor: false
 
   readonly property int pinnedCount: {
     var n = 0
@@ -50,6 +56,8 @@ Item {
   property string pasteFileScript: pluginPath + "/bin/omarchy-clipboard-paste-file"
   property string pasteTextScript: pluginPath + "/bin/omarchy-clipboard-paste-text"
   property string openScript: pluginPath + "/bin/omarchy-clipboard-open"
+  property string writeTextScript: pluginPath + "/bin/omarchy-clipboard-write-text"
+  property string editorSyncTmpPath: Quickshell.env("HOME") + "/.local/state/omarchy/clipboard-editor-sync.tmp"
   // Shares the [menu] surface tokens — themes that style the menu also
   // style the clipboard. Selected-row colors composed in the
   // singleton so consumers drop them straight into Rectangle bindings.
@@ -84,6 +92,9 @@ Item {
   }
 
   function close() {
+    root.commitEditorChanges()
+    root.editorSearchOpen = false
+    root.editorSearchQuery = ""
     root.cancelClearHistory()
     root.clearToast()
     root.opened = false
@@ -96,6 +107,9 @@ Item {
 
   function switchTab(tab) {
     if (tab !== "history" && tab !== "pinned") return
+    root.commitEditorChanges()
+    root.editorSearchOpen = false
+    root.editorSearchQuery = ""
     root.activeTab = tab
     root.activePanel = "list"
     root.selectedIndex = 0
@@ -103,6 +117,308 @@ Item {
     root.disarmPointer()
     root.rebuildDisplay()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function isEditableActiveRow() {
+    var row = previewPanel.activeRow
+    return !!row && !row.previewImage && row.entryType === "text"
+  }
+
+  function loadEditorFromActiveRow(forceReset) {
+    var row = previewPanel.activeRow
+    if (!row || row.previewImage || row.entryType !== "text") {
+      if (root.editorState.entryId !== "" || forceReset) {
+        root.editorState = EditorEngine.createState("", "")
+        root.editorSearchOpen = false
+        root.editorSearchQuery = ""
+        root.editorRevision++
+      }
+      return
+    }
+    if (!forceReset && root.editorState && root.editorState.entryId === row.id) {
+      return
+    }
+    var fullEntryText = row.fullText
+    for (var i = 0; i < root.history.length; i++) {
+      if (root.history[i] && root.history[i].id === row.id && root.history[i].type === "text") {
+        fullEntryText = String(root.history[i].text || "")
+        break
+      }
+    }
+    root.editorState = EditorEngine.createState(fullEntryText, row.id)
+    root.editorSearchOpen = false
+    root.editorSearchQuery = ""
+    root.editorRevision++
+    Qt.callLater(function() {
+      root.syncEditorView()
+      previewFlickable.contentY = 0
+    })
+  }
+
+  function syncEditorView() {
+    if (!editorTextEdit) return
+    root._syncingEditor = true
+    var st = root.editorState
+    if (editorTextEdit.text !== st.text) editorTextEdit.text = st.text
+    var a = Math.max(0, Math.min(st.anchor, editorTextEdit.length))
+    var c = Math.max(0, Math.min(st.cursor, editorTextEdit.length))
+    if (a !== c) editorTextEdit.select(a, c)
+    else editorTextEdit.cursorPosition = c
+    root._syncingEditor = false
+    root.ensureEditorCursorVisible()
+  }
+
+  function ensureEditorCursorVisible() {
+    if (!editorTextEdit || !root.isEditableActiveRow()) return
+    var rect = editorTextEdit.cursorRectangle
+    var margin = Style.space(12)
+    if (rect.y < previewFlickable.contentY) {
+      previewFlickable.contentY = Math.max(0, rect.y - margin)
+    } else if (rect.y + rect.height > previewFlickable.contentY + previewFlickable.height) {
+      var maxY = Math.max(0, previewFlickable.contentHeight - previewFlickable.height)
+      previewFlickable.contentY = Math.min(maxY, rect.y + rect.height - previewFlickable.height + margin)
+    }
+  }
+
+  function syncTextToClipboard(text, source) {
+    editorSyncFile.setText(String(text || ""))
+    writeTextProc.sourceName = source || "editor"
+    writeTextProc.running = false
+    writeTextProc.running = true
+  }
+
+  function copyEditorSelection() {
+    if (!EditorEngine.hasSelection(root.editorState)) return false
+    var sel = EditorEngine.selectedText(root.editorState)
+    root.syncTextToClipboard(sel, "editor-selection")
+    root.showToast(Commons.I18n.t("clipboard.selectionCopied", "Selection copied"), false)
+    return true
+  }
+
+  function commitEditorChanges() {
+    editorSaveTimer.stop()
+    var st = root.editorState
+    if (!st || !st.entryId || !st.dirty) return
+    var targetId = st.entryId
+    var existing = null
+    for (var i = 0; i < root.history.length; i++) {
+      if (root.history[i] && root.history[i].id === targetId) {
+        existing = root.history[i]
+        break
+      }
+    }
+    if (!existing || existing.type !== "text") {
+      st.dirty = false
+      return
+    }
+    if (existing.text === st.text) {
+      st.dirty = false
+      root.editorRevision++
+      return
+    }
+    root.history = ClipboardHistory.updateEntry(root.history, targetId, st.text)
+    st.dirty = false
+    root.saveHistory()
+    root.rebuildDisplay()
+    for (var j = 0; j < displayModel.count; j++) {
+      if (displayModel.get(j).id === targetId) {
+        root.selectedIndex = j
+        break
+      }
+    }
+    root.editorRevision++
+    root.syncTextToClipboard(st.text, "editor")
+  }
+
+  function scheduleEditorCommit(immediate) {
+    if (immediate) root.commitEditorChanges()
+    else editorSaveTimer.restart()
+  }
+
+  function handleEditorKey(event) {
+    if (!root.isEditableActiveRow()) {
+      if (event.key === Qt.Key_Left && event.modifiers === Qt.NoModifier) {
+        root.focusPanel("list")
+      } else if (event.key === Qt.Key_Up) {
+        root.scrollPreview(-48)
+      } else if (event.key === Qt.Key_Down) {
+        root.scrollPreview(48)
+      } else if (event.key === Qt.Key_PageUp) {
+        root.scrollPreview(-Math.max(96, previewFlickable.height * 0.85))
+      } else if (event.key === Qt.Key_PageDown) {
+        root.scrollPreview(Math.max(96, previewFlickable.height * 0.85))
+      } else if (event.key === Qt.Key_Home) {
+        root.scrollPreviewToEdge(false)
+      } else if (event.key === Qt.Key_End) {
+        root.scrollPreviewToEdge(true)
+      } else if (event.key === Qt.Key_Delete) {
+        if (event.modifiers & Qt.ShiftModifier) root.requestClearHistory()
+        else root.removeDisplayIndex(root.selectedIndex)
+      } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+        if (root.cursorActive && (event.modifiers & Qt.AltModifier)) root.openIndex(root.selectedIndex)
+        else if (root.cursorActive && (event.modifiers & Qt.ShiftModifier)) root.copyIndex(root.selectedIndex)
+        else if (root.cursorActive) root.activateIndex(root.selectedIndex)
+      }
+      return true
+    }
+
+    var ctrl = !!(event.modifiers & Qt.ControlModifier)
+    var shift = !!(event.modifiers & Qt.ShiftModifier)
+    var alt = !!(event.modifiers & Qt.AltModifier)
+    var st = root.editorState
+
+    if (root.editorSearchOpen) {
+      if (event.key === Qt.Key_Escape) {
+        root.editorSearchOpen = false
+        return true
+      } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_F3) {
+        EditorEngine.nextMatch(st, shift ? -1 : 1)
+        root.editorRevision++
+        root.syncEditorView()
+        return true
+      } else if (event.key === Qt.Key_Backspace) {
+        root.editorSearchQuery = root.editorSearchQuery.slice(0, -1)
+        EditorEngine.setSearch(st, root.editorSearchQuery)
+        root.editorRevision++
+        root.syncEditorView()
+        return true
+      } else if (!ctrl && !alt && event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127) {
+        root.editorSearchQuery += event.text
+        EditorEngine.setSearch(st, root.editorSearchQuery)
+        root.editorRevision++
+        root.syncEditorView()
+        return true
+      }
+      return true
+    }
+
+    if (ctrl && event.key === Qt.Key_F) {
+      root.editorSearchOpen = true
+      if (EditorEngine.hasSelection(st)) root.editorSearchQuery = EditorEngine.selectedText(st)
+      EditorEngine.setSearch(st, root.editorSearchQuery)
+      root.editorRevision++
+      root.syncEditorView()
+      return true
+    } else if (event.key === Qt.Key_F3) {
+      if (st.searchQuery) {
+        EditorEngine.nextMatch(st, shift ? -1 : 1)
+        root.editorRevision++
+        root.syncEditorView()
+      }
+      return true
+    } else if (ctrl && event.key === Qt.Key_C) {
+      if (EditorEngine.hasSelection(st)) root.copyEditorSelection()
+      else root.copyIndex(root.selectedIndex)
+      return true
+    } else if (ctrl && event.key === Qt.Key_X) {
+      if (EditorEngine.hasSelection(st)) {
+        root.copyEditorSelection()
+        EditorEngine.deleteBackward(st, false, false)
+        root.editorRevision++
+        root.syncEditorView()
+        root.scheduleEditorCommit(false)
+      }
+      return true
+    } else if (ctrl && event.key === Qt.Key_V) {
+      pasteReadProc.running = false
+      pasteReadProc.running = true
+      return true
+    } else if (ctrl && shift && event.key === Qt.Key_Z) {
+      if (EditorEngine.redo(st)) {
+        root.editorRevision++
+        root.syncEditorView()
+        root.scheduleEditorCommit(true)
+      }
+      return true
+    } else if (ctrl && event.key === Qt.Key_Z) {
+      if (EditorEngine.undo(st)) {
+        root.editorRevision++
+        root.syncEditorView()
+        root.scheduleEditorCommit(true)
+      }
+      return true
+    } else if (ctrl && event.key === Qt.Key_A) {
+      EditorEngine.selectAll(st)
+      root.editorRevision++
+      root.syncEditorView()
+      return true
+    } else if (event.key === Qt.Key_Left) {
+      if (ctrl) EditorEngine.moveWordLeft(st, shift)
+      else EditorEngine.moveLeft(st, shift)
+      root.editorRevision++
+      root.syncEditorView()
+      return true
+    } else if (event.key === Qt.Key_Right) {
+      if (ctrl) EditorEngine.moveWordRight(st, shift)
+      else EditorEngine.moveRight(st, shift)
+      root.editorRevision++
+      root.syncEditorView()
+      return true
+    } else if (event.key === Qt.Key_Up) {
+      EditorEngine.moveUp(st, shift)
+      root.editorRevision++
+      root.syncEditorView()
+      return true
+    } else if (event.key === Qt.Key_Down) {
+      EditorEngine.moveDown(st, shift)
+      root.editorRevision++
+      root.syncEditorView()
+      return true
+    } else if (event.key === Qt.Key_Home) {
+      if (ctrl) EditorEngine.moveDocStart(st, shift)
+      else EditorEngine.moveLineStart(st, shift)
+      root.editorRevision++
+      root.syncEditorView()
+      return true
+    } else if (event.key === Qt.Key_End) {
+      if (ctrl) EditorEngine.moveDocEnd(st, shift)
+      else EditorEngine.moveLineEnd(st, shift)
+      root.editorRevision++
+      root.syncEditorView()
+      return true
+    } else if (event.key === Qt.Key_PageUp) {
+      root.scrollPreview(-Math.max(96, previewFlickable.height * 0.85))
+      return true
+    } else if (event.key === Qt.Key_PageDown) {
+      root.scrollPreview(Math.max(96, previewFlickable.height * 0.85))
+      return true
+    } else if (event.key === Qt.Key_Backspace) {
+      EditorEngine.deleteBackward(st, ctrl, !ctrl)
+      root.editorRevision++
+      root.syncEditorView()
+      root.scheduleEditorCommit(false)
+      return true
+    } else if (event.key === Qt.Key_Delete) {
+      EditorEngine.deleteForward(st, ctrl, !ctrl)
+      root.editorRevision++
+      root.syncEditorView()
+      root.scheduleEditorCommit(false)
+      return true
+    } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+      if (alt) {
+        root.openIndex(root.selectedIndex)
+      } else if (ctrl) {
+        root.commitEditorChanges()
+        root.activateIndex(root.selectedIndex)
+      } else {
+        EditorEngine.insertText(st, "\n", false)
+        root.editorRevision++
+        root.syncEditorView()
+        root.scheduleEditorCommit(false)
+      }
+      return true
+    } else if (!ctrl && !alt && event.text && event.text.length > 0) {
+      var code = event.text.charCodeAt(0)
+      if (code >= 32 && code !== 127) {
+        EditorEngine.insertText(st, event.text, true)
+        root.editorRevision++
+        root.syncEditorView()
+        root.scheduleEditorCommit(false)
+        return true
+      }
+    }
+
+    return true
   }
 
   function focusPanel(panelName) {
@@ -274,7 +590,8 @@ Item {
   }
 
   onSelectedIndexChanged: {
-    previewFlickable.contentY = 0
+    root.commitEditorChanges()
+    root.loadEditorFromActiveRow(false)
   }
 
   function rebuildDisplay() {
@@ -299,6 +616,8 @@ Item {
     if (displayModel.count === 0) selectedIndex = 0
     else if (selectedIndex >= displayModel.count) selectedIndex = displayModel.count - 1
     else if (selectedIndex < 0) selectedIndex = 0
+
+    root.loadEditorFromActiveRow(false)
 
     Qt.callLater(function() {
       if (displayModel.count > 0) resultList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
@@ -471,6 +790,42 @@ Item {
     onTriggered: root.clearToast()
   }
 
+  Timer {
+    id: editorSaveTimer
+    interval: 350
+    repeat: false
+    onTriggered: root.commitEditorChanges()
+  }
+
+  FileView {
+    id: editorSyncFile
+    path: root.editorSyncTmpPath
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+  }
+
+  Process {
+    id: writeTextProc
+    property string sourceName: "editor"
+    command: [root.writeTextScript, "--suppress", "--source", sourceName, "--file", root.editorSyncTmpPath]
+  }
+
+  Process {
+    id: pasteReadProc
+    command: ["wl-paste", "--type", "text", "--no-newline"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        if (!text || !root.isEditableActiveRow()) return
+        EditorEngine.insertText(root.editorState, text, false)
+        root.editorRevision++
+        root.syncEditorView()
+        root.scheduleEditorCommit(false)
+      }
+    }
+  }
+
   OverlayWindow {
     id: panel
     shown: root.opened
@@ -512,14 +867,22 @@ Item {
           }
 
           if (event.key === Qt.Key_Escape) {
-            if (root.activePanel === "preview") root.focusPanel("list")
-            else if (root.filterText) root.setFilter("")
-            else root.close()
+            if (root.activePanel === "preview" && root.editorSearchOpen) {
+              root.editorSearchOpen = false
+            } else if (root.activePanel === "preview") {
+              root.commitEditorChanges()
+              root.focusPanel("list")
+            } else if (root.filterText) {
+              root.setFilter("")
+            } else {
+              root.close()
+            }
             event.accepted = true
           } else if ((event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)) {
             root.switchTab(root.activeTab === "history" ? "pinned" : "history")
             event.accepted = true
           } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
+            if (root.activePanel === "preview") root.commitEditorChanges()
             root.togglePanelFocus()
             event.accepted = true
           } else if ((event.modifiers & Qt.AltModifier) && event.key === Qt.Key_1) {
@@ -531,32 +894,10 @@ Item {
           } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_P) {
             if (root.cursorActive) root.togglePinIndex(root.selectedIndex)
             event.accepted = true
+          } else if (root.activePanel === "preview") {
+            if (root.handleEditorKey(event)) event.accepted = true
           } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_Z) {
             if (root.pendingUndo) root.undoDelete()
-            event.accepted = true
-          } else if (root.activePanel === "preview") {
-            if (event.key === Qt.Key_Left && event.modifiers === Qt.NoModifier) {
-              root.focusPanel("list")
-            } else if (event.key === Qt.Key_Up) {
-              root.scrollPreview(-48)
-            } else if (event.key === Qt.Key_Down) {
-              root.scrollPreview(48)
-            } else if (event.key === Qt.Key_PageUp) {
-              root.scrollPreview(-Math.max(96, previewFlickable.height * 0.85))
-            } else if (event.key === Qt.Key_PageDown) {
-              root.scrollPreview(Math.max(96, previewFlickable.height * 0.85))
-            } else if (event.key === Qt.Key_Home) {
-              root.scrollPreviewToEdge(false)
-            } else if (event.key === Qt.Key_End) {
-              root.scrollPreviewToEdge(true)
-            } else if (event.key === Qt.Key_Delete) {
-              if (event.modifiers & Qt.ShiftModifier) root.requestClearHistory()
-              else root.removeDisplayIndex(root.selectedIndex)
-            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-              if (root.cursorActive && (event.modifiers & Qt.AltModifier)) root.openIndex(root.selectedIndex)
-              else if (root.cursorActive && (event.modifiers & Qt.ShiftModifier)) root.copyIndex(root.selectedIndex)
-              else if (root.cursorActive) root.activateIndex(root.selectedIndex)
-            }
             event.accepted = true
           } else if (Util.editsFilter(event, root.filterText)) {
             root.setFilter(Util.editedFilter(event, root.filterText))
@@ -857,6 +1198,7 @@ Item {
 
               property var activeRow: displayModel.count > 0 && root.selectedIndex >= 0 && root.selectedIndex < displayModel.count ? displayModel.get(root.selectedIndex) : null
               readonly property bool panelFocused: root.activePanel === "preview"
+              readonly property bool isTextEditable: !!activeRow && !activeRow.previewImage && activeRow.entryType === "text"
 
               Rectangle {
                 visible: displayModel.count > 0
@@ -877,24 +1219,121 @@ Item {
                 }
               }
 
+              Rectangle {
+                id: editorFindBar
+                visible: root.editorSearchOpen && previewPanel.isTextEditable
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.leftMargin: root.contentMargin
+                height: visible ? Style.space(30) : 0
+                radius: Math.max(4, root.cornerRadius - 4)
+                color: Util.alpha(root.foreground, 0.08)
+                border.width: Style.normalBorderWidth
+                border.color: Util.alpha(root.border, 0.35)
+                z: 5
+
+                Row {
+                  anchors.fill: parent
+                  anchors.leftMargin: Style.space(10)
+                  anchors.rightMargin: Style.space(10)
+                  spacing: Style.space(8)
+
+                  Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: root.editorSearchQuery || Commons.I18n.t("clipboard.findInEntry", "Find in entry…")
+                    width: parent.width - findCountLabel.width - parent.spacing
+                    color: root.foreground
+                    opacity: root.editorSearchQuery ? 1.0 : 0.55
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    elide: Text.ElideRight
+                  }
+
+                  Text {
+                    id: findCountLabel
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: {
+                      var _rev = root.editorRevision
+                      var st = root.editorState
+                      if (!root.editorSearchQuery) return ""
+                      if (!st || !st.searchMatches || st.searchMatches.length === 0) return "0/0"
+                      return String(st.searchIndex + 1) + "/" + String(st.searchMatches.length)
+                    }
+                    color: root.selectedText
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                  }
+                }
+              }
+
               Flickable {
                 id: previewFlickable
-                anchors.fill: parent
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: editorFindBar.visible ? editorFindBar.bottom : parent.top
+                anchors.bottom: editorStatusBar.visible ? editorStatusBar.top : parent.bottom
                 anchors.leftMargin: root.contentMargin
                 anchors.rightMargin: Style.space(8)
-                anchors.topMargin: 0
-                anchors.bottomMargin: 0
+                anchors.topMargin: editorFindBar.visible ? Style.space(6) : 0
+                anchors.bottomMargin: editorStatusBar.visible ? Style.space(6) : 0
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
                 contentWidth: width
-                contentHeight: previewPanel.activeRow && !previewPanel.activeRow.previewImage
-                  ? previewTextItem.implicitHeight
-                  : height
+                contentHeight: previewPanel.isTextEditable
+                  ? editorTextEdit.implicitHeight
+                  : (previewPanel.activeRow && !previewPanel.activeRow.previewImage
+                    ? previewTextItem.implicitHeight
+                    : height)
+
+                TextEdit {
+                  id: editorTextEdit
+                  visible: previewPanel.isTextEditable
+                  width: previewFlickable.width
+                  textFormat: TextEdit.PlainText
+                  readOnly: true
+                  activeFocusOnPress: false
+                  selectByMouse: true
+                  cursorVisible: previewPanel.panelFocused
+                  wrapMode: TextEdit.WrapAnywhere
+                  color: root.foreground
+                  selectionColor: root.selectedBackground
+                  selectedTextColor: root.selectedText
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.title
+                  verticalAlignment: TextEdit.AlignTop
+
+                  onCursorPositionChanged: {
+                    if (root._syncingEditor || !previewPanel.isTextEditable) return
+                    var st = root.editorState
+                    if (!st) return
+                    if (selectionStart !== selectionEnd) {
+                      var a = cursorPosition === selectionEnd ? selectionStart : selectionEnd
+                      EditorEngine.setSelection(st, a, cursorPosition)
+                    } else {
+                      EditorEngine.setCursor(st, cursorPosition, false)
+                    }
+                    root.editorRevision++
+                  }
+
+                  onSelectionStartChanged: {
+                    if (root._syncingEditor || !previewPanel.isTextEditable) return
+                    var st = root.editorState
+                    if (!st) return
+                    if (selectionStart !== selectionEnd) {
+                      var a = cursorPosition === selectionEnd ? selectionStart : selectionEnd
+                      EditorEngine.setSelection(st, a, cursorPosition)
+                      root.editorRevision++
+                    }
+                  }
+                }
 
                 Text {
                   id: previewTextItem
                   textFormat: Text.PlainText
-                  visible: previewPanel.activeRow && !previewPanel.activeRow.previewImage
+                  visible: previewPanel.activeRow && !previewPanel.activeRow.previewImage && !previewPanel.isTextEditable
                   width: previewFlickable.width
                   text: previewPanel.activeRow ? previewPanel.activeRow.fullText : ""
                   color: root.foreground
@@ -916,10 +1355,65 @@ Item {
               }
 
               Rectangle {
+                id: editorStatusBar
+                visible: previewPanel.isTextEditable
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.leftMargin: root.contentMargin
+                height: visible ? Style.space(22) : 0
+                color: "transparent"
+
+                Row {
+                  anchors.fill: parent
+                  spacing: Style.space(10)
+
+                  Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: previewPanel.panelFocused ? "EDIT" : "PREVIEW"
+                    color: previewPanel.panelFocused ? root.selectedText : root.foreground
+                    opacity: previewPanel.panelFocused ? 1.0 : 0.55
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.weight: Font.DemiBold
+                  }
+
+                  Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: {
+                      var _rev = root.editorRevision
+                      var st = root.editorState
+                      var lc = EditorEngine.cursorLineCol(st ? st.text : "", st ? st.cursor : 0)
+                      return "Ln " + (lc.line + 1) + ", Col " + (lc.col + 1)
+                    }
+                    color: root.foreground
+                    opacity: 0.65
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+
+                  Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: {
+                      var _rev = root.editorRevision
+                      return root.editorState && root.editorState.dirty ? "Modified" : ""
+                    }
+                    color: root.selectedText
+                    opacity: 0.85
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+              }
+
+              Rectangle {
                 visible: previewFlickable.contentHeight > previewFlickable.height && displayModel.count > 0
                 anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
+                anchors.top: previewFlickable.top
+                anchors.bottom: previewFlickable.bottom
                 width: Style.space(4)
                 radius: Style.space(2)
                 color: Util.alpha(root.foreground, 0.08)

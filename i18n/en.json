@@ -22,5 +22,7 @@
   "clipboard.unpin": "Unpin",
   "clipboard.pinned": "Pinned",
   "clipboard.unpinned": "Unpinned",
-  "clipboard.history": "History"
+  "clipboard.history": "History",
+  "clipboard.findInEntry": "Find in entry…",
+  "clipboard.selectionCopied": "Selection copied"
 }

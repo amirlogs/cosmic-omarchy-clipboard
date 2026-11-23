@@ -60,11 +60,13 @@ self_write_action() {
   fi
   [[ $mhash == "$hash" ]] || return 0
 
-  rm -f "$MARKER_FILE"
   if [[ $mode == "suppress" ]]; then
     echo "suppress"
   elif [[ $mode == "tag" ]]; then
+    rm -f "$MARKER_FILE"
     echo "tag:${source:-clipboard}"
+  else
+    rm -f "$MARKER_FILE"
   fi
 }
 
