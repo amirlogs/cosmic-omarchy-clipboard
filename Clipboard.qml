@@ -29,6 +29,7 @@ Item {
   property bool clearConfirmOpen: false
   property var history: []
   property string activeTab: "history"
+  property string activePanel: "list"
   property var pendingUndo: null
   property string toastText: ""
   property bool toastCanUndo: false
@@ -75,6 +76,7 @@ Item {
     root.selectedIndex = 0
     root.cursorActive = true
     root.activeTab = "history"
+    root.activePanel = "list"
     root.clearToast()
     root.disarmPointer()
     root.rebuildDisplay()
@@ -95,11 +97,37 @@ Item {
   function switchTab(tab) {
     if (tab !== "history" && tab !== "pinned") return
     root.activeTab = tab
+    root.activePanel = "list"
     root.selectedIndex = 0
     root.cursorActive = true
     root.disarmPointer()
     root.rebuildDisplay()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function focusPanel(panelName) {
+    if (panelName !== "list" && panelName !== "preview") return
+    if (panelName === "preview" && displayModel.count === 0) return
+    root.activePanel = panelName
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function togglePanelFocus() {
+    if (root.activePanel === "list") {
+      if (displayModel.count > 0) root.focusPanel("preview")
+    } else {
+      root.focusPanel("list")
+    }
+  }
+
+  function scrollPreview(deltaY) {
+    var maxY = Math.max(0, previewFlickable.contentHeight - previewFlickable.height)
+    previewFlickable.contentY = Math.max(0, Math.min(maxY, previewFlickable.contentY + deltaY))
+  }
+
+  function scrollPreviewToEdge(toBottom) {
+    var maxY = Math.max(0, previewFlickable.contentHeight - previewFlickable.height)
+    previewFlickable.contentY = toBottom ? maxY : 0
   }
 
   function showToast(message, canUndo) {
@@ -222,6 +250,7 @@ Item {
     if (displayModel.count <= 1) {
       root.selectedIndex = 0
       root.cursorActive = false
+      root.activePanel = "list"
     } else if (root.selectedIndex >= displayModel.count - 1) {
       root.selectedIndex = displayModel.count - 2
     }
@@ -242,6 +271,10 @@ Item {
     root.showToast(wasPinned
       ? Commons.I18n.t("clipboard.unpinned", "Unpinned")
       : Commons.I18n.t("clipboard.pinned", "Pinned"), false)
+  }
+
+  onSelectedIndexChanged: {
+    previewFlickable.contentY = 0
   }
 
   function rebuildDisplay() {
@@ -479,11 +512,15 @@ Item {
           }
 
           if (event.key === Qt.Key_Escape) {
-            if (root.filterText) root.setFilter("")
+            if (root.activePanel === "preview") root.focusPanel("list")
+            else if (root.filterText) root.setFilter("")
             else root.close()
             event.accepted = true
           } else if ((event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)) {
             root.switchTab(root.activeTab === "history" ? "pinned" : "history")
+            event.accepted = true
+          } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
+            root.togglePanelFocus()
             event.accepted = true
           } else if ((event.modifiers & Qt.AltModifier) && event.key === Qt.Key_1) {
             root.switchTab("history")
@@ -497,12 +534,39 @@ Item {
           } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_Z) {
             if (root.pendingUndo) root.undoDelete()
             event.accepted = true
+          } else if (root.activePanel === "preview") {
+            if (event.key === Qt.Key_Left && event.modifiers === Qt.NoModifier) {
+              root.focusPanel("list")
+            } else if (event.key === Qt.Key_Up) {
+              root.scrollPreview(-48)
+            } else if (event.key === Qt.Key_Down) {
+              root.scrollPreview(48)
+            } else if (event.key === Qt.Key_PageUp) {
+              root.scrollPreview(-Math.max(96, previewFlickable.height * 0.85))
+            } else if (event.key === Qt.Key_PageDown) {
+              root.scrollPreview(Math.max(96, previewFlickable.height * 0.85))
+            } else if (event.key === Qt.Key_Home) {
+              root.scrollPreviewToEdge(false)
+            } else if (event.key === Qt.Key_End) {
+              root.scrollPreviewToEdge(true)
+            } else if (event.key === Qt.Key_Delete) {
+              if (event.modifiers & Qt.ShiftModifier) root.requestClearHistory()
+              else root.removeDisplayIndex(root.selectedIndex)
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+              if (root.cursorActive && (event.modifiers & Qt.AltModifier)) root.openIndex(root.selectedIndex)
+              else if (root.cursorActive && (event.modifiers & Qt.ShiftModifier)) root.copyIndex(root.selectedIndex)
+              else if (root.cursorActive) root.activateIndex(root.selectedIndex)
+            }
+            event.accepted = true
           } else if (Util.editsFilter(event, root.filterText)) {
             root.setFilter(Util.editedFilter(event, root.filterText))
             event.accepted = true
           } else if (event.key === Qt.Key_Delete) {
             if (event.modifiers & Qt.ShiftModifier) root.requestClearHistory()
             else root.removeDisplayIndex(root.selectedIndex)
+            event.accepted = true
+          } else if (event.key === Qt.Key_Right && event.modifiers === Qt.NoModifier && !root.filterText && displayModel.count > 0) {
+            root.focusPanel("preview")
             event.accepted = true
           } else if (event.key === Qt.Key_Up) {
             root.select(-1)
@@ -786,49 +850,91 @@ Item {
             }
 
             Item {
+              id: previewPanel
               width: parent.width / 2
               height: parent.height
               clip: true
 
               property var activeRow: displayModel.count > 0 && root.selectedIndex >= 0 && root.selectedIndex < displayModel.count ? displayModel.get(root.selectedIndex) : null
+              readonly property bool panelFocused: root.activePanel === "preview"
 
               Rectangle {
                 visible: displayModel.count > 0
                 anchors.left: parent.left
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: Style.normalBorderWidth
-                color: Util.alpha(root.border, 0.28)
+                width: previewPanel.panelFocused ? Math.max(2, Style.normalBorderWidth * 2) : Style.normalBorderWidth
+                color: previewPanel.panelFocused ? Util.alpha(root.selectedText, 0.75) : Util.alpha(root.border, 0.28)
               }
 
-              Text {
-                textFormat: Text.PlainText
-                visible: parent.activeRow && !parent.activeRow.previewImage
+              MouseArea {
                 anchors.fill: parent
-                anchors.leftMargin: root.contentMargin
-                anchors.rightMargin: 0
-                anchors.topMargin: 0
-                anchors.bottomMargin: 0
-                text: parent.activeRow ? parent.activeRow.fullText : ""
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.title
-                wrapMode: Text.WrapAnywhere
-                elide: Text.ElideRight
-                verticalAlignment: Text.AlignTop
+                acceptedButtons: Qt.LeftButton
+                propagateComposedEvents: true
+                onPressed: function(mouse) {
+                  root.focusPanel("preview")
+                  mouse.accepted = false
+                }
               }
 
-              SizedImage {
-                visible: parent.activeRow && parent.activeRow.previewImage
+              Flickable {
+                id: previewFlickable
                 anchors.fill: parent
                 anchors.leftMargin: root.contentMargin
-                anchors.rightMargin: 0
+                anchors.rightMargin: Style.space(8)
                 anchors.topMargin: 0
                 anchors.bottomMargin: 0
-                url: parent.activeRow ? parent.activeRow.previewImage : ""
-                verticalAlignment: Image.AlignTop
-                asynchronous: true
-                smooth: true
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                contentWidth: width
+                contentHeight: previewPanel.activeRow && !previewPanel.activeRow.previewImage
+                  ? previewTextItem.implicitHeight
+                  : height
+
+                Text {
+                  id: previewTextItem
+                  textFormat: Text.PlainText
+                  visible: previewPanel.activeRow && !previewPanel.activeRow.previewImage
+                  width: previewFlickable.width
+                  text: previewPanel.activeRow ? previewPanel.activeRow.fullText : ""
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.title
+                  wrapMode: Text.WrapAnywhere
+                  verticalAlignment: Text.AlignTop
+                }
+
+                SizedImage {
+                  visible: previewPanel.activeRow && previewPanel.activeRow.previewImage
+                  width: previewFlickable.width
+                  height: previewFlickable.height
+                  url: previewPanel.activeRow ? previewPanel.activeRow.previewImage : ""
+                  verticalAlignment: Image.AlignTop
+                  asynchronous: true
+                  smooth: true
+                }
+              }
+
+              Rectangle {
+                visible: previewFlickable.contentHeight > previewFlickable.height && displayModel.count > 0
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: Style.space(4)
+                radius: Style.space(2)
+                color: Util.alpha(root.foreground, 0.08)
+
+                Rectangle {
+                  width: parent.width
+                  radius: parent.radius
+                  color: previewPanel.panelFocused ? Util.alpha(root.selectedText, 0.7) : Util.alpha(root.foreground, 0.32)
+                  y: previewFlickable.contentHeight > 0
+                    ? (previewFlickable.contentY / previewFlickable.contentHeight) * parent.height
+                    : 0
+                  height: previewFlickable.contentHeight > 0
+                    ? Math.max(Style.space(24), (previewFlickable.height / previewFlickable.contentHeight) * parent.height)
+                    : parent.height
+                }
               }
             }
           }

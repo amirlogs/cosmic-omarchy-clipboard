@@ -35,5 +35,14 @@ Scope {
       clipboard.togglePinIndex(clipboard.selectedIndex)
       return "ok"
     }
+
+    function togglePanel(): string {
+      clipboard.togglePanelFocus()
+      return clipboard.activePanel
+    }
+
+    function activePanel(): string {
+      return clipboard.activePanel
+    }
   }
 }
