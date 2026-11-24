@@ -8,6 +8,7 @@ import qs.Ui
 import "ClipboardHistory.js" as ClipboardHistory
 import "EditorEngine.js" as EditorEngine
 import "VimEngine.js" as VimEngine
+import "Keybindings.js" as Keybindings
 
 Item {
   id: root
@@ -61,6 +62,20 @@ Item {
   property string openScript: pluginPath + "/bin/omarchy-clipboard-open"
   property string writeTextScript: pluginPath + "/bin/omarchy-clipboard-write-text"
   property string editorSyncTmpPath: Quickshell.env("HOME") + "/.local/state/omarchy/clipboard-editor-sync.tmp"
+  property var keybindings: Keybindings.defaultConfig()
+  property string keybindingsPath: Quickshell.env("HOME") + "/.config/omarchy-clipboard/keybindings.json"
+  property string shortcutsSyncScript: pluginPath + "/bin/omarchy-clipboard-shortcuts"
+  readonly property var qtKeyCodes: ({
+    Key_Tab: Qt.Key_Tab,
+    Key_Backtab: Qt.Key_Backtab,
+    Key_Delete: Qt.Key_Delete,
+    Key_Backspace: Qt.Key_Backspace,
+    Key_Escape: Qt.Key_Escape,
+    Key_Return: Qt.Key_Return,
+    Key_Enter: Qt.Key_Enter,
+    Key_F3: Qt.Key_F3,
+    Key_Comma: Qt.Key_Comma
+  })
   // Shares the [menu] surface tokens — themes that style the menu also
   // style the clipboard. Selected-row colors composed in the
   // singleton so consumers drop them straight into Rectangle bindings.
@@ -270,6 +285,8 @@ Item {
     var shift = !!(event.modifiers & Qt.ShiftModifier)
     var alt = !!(event.modifiers & Qt.AltModifier)
     var st = root.editorState
+    var combo = Keybindings.qtEventToCombo(event.key, event.modifiers, event.text, root.qtKeyCodes)
+    var normalAction = Keybindings.matchAction(root.keybindings, "normal", combo)
 
     if (root.vimMode) {
       var keyName = ""
@@ -328,25 +345,25 @@ Item {
       return true
     }
 
-    if (ctrl && event.key === Qt.Key_F) {
+    if (normalAction === "find") {
       root.editorSearchOpen = true
       if (EditorEngine.hasSelection(st)) root.editorSearchQuery = EditorEngine.selectedText(st)
       EditorEngine.setSearch(st, root.editorSearchQuery)
       root.editorRevision++
       root.syncEditorView()
       return true
-    } else if (event.key === Qt.Key_F3) {
+    } else if (normalAction === "findNext" || normalAction === "findPrev") {
       if (st.searchQuery) {
-        EditorEngine.nextMatch(st, shift ? -1 : 1)
+        EditorEngine.nextMatch(st, normalAction === "findPrev" ? -1 : 1)
         root.editorRevision++
         root.syncEditorView()
       }
       return true
-    } else if (ctrl && event.key === Qt.Key_C) {
+    } else if (normalAction === "copySelection") {
       if (EditorEngine.hasSelection(st)) root.copyEditorSelection()
       else root.copyIndex(root.selectedIndex)
       return true
-    } else if (ctrl && event.key === Qt.Key_X) {
+    } else if (normalAction === "cutSelection") {
       if (EditorEngine.hasSelection(st)) {
         root.copyEditorSelection()
         EditorEngine.deleteBackward(st, false, false)
@@ -355,25 +372,25 @@ Item {
         root.scheduleEditorCommit(false)
       }
       return true
-    } else if (ctrl && event.key === Qt.Key_V) {
+    } else if (normalAction === "paste") {
       pasteReadProc.running = false
       pasteReadProc.running = true
       return true
-    } else if (ctrl && shift && event.key === Qt.Key_Z) {
+    } else if (normalAction === "redo") {
       if (EditorEngine.redo(st)) {
         root.editorRevision++
         root.syncEditorView()
         root.scheduleEditorCommit(true)
       }
       return true
-    } else if (ctrl && event.key === Qt.Key_Z) {
+    } else if (normalAction === "undo") {
       if (EditorEngine.undo(st)) {
         root.editorRevision++
         root.syncEditorView()
         root.scheduleEditorCommit(true)
       }
       return true
-    } else if (ctrl && event.key === Qt.Key_A) {
+    } else if (normalAction === "selectAll") {
       EditorEngine.selectAll(st)
       root.editorRevision++
       root.syncEditorView()
@@ -841,6 +858,17 @@ Item {
     printErrors: false
   }
 
+  FileView {
+    id: keybindingsFile
+    path: root.keybindingsPath
+    watchChanges: true
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.keybindings = Keybindings.parseConfig(text())
+    onLoadFailed: root.keybindings = Keybindings.defaultConfig()
+    onFileChanged: reload()
+  }
+
   Process {
     id: writeTextProc
     property string sourceName: "editor"
@@ -902,6 +930,9 @@ Item {
             return
           }
 
+          var combo = Keybindings.qtEventToCombo(event.key, event.modifiers, event.text, root.qtKeyCodes)
+          var appAction = Keybindings.matchAction(root.keybindings, "app", combo)
+
           if (event.key === Qt.Key_Escape) {
             if (root.activePanel === "preview" && root.vimMode && root.vimState.mode !== "normal") {
               root.handleEditorKey(event)
@@ -916,33 +947,35 @@ Item {
               root.close()
             }
             event.accepted = true
-          } else if ((event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)) {
+          } else if (appAction === "switchTab") {
             root.switchTab(root.activeTab === "history" ? "pinned" : "history")
             event.accepted = true
-          } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
+          } else if (appAction === "switchPanel") {
             if (root.activePanel === "preview") root.commitEditorChanges()
             root.togglePanelFocus()
             event.accepted = true
-          } else if ((event.modifiers & Qt.AltModifier) && event.key === Qt.Key_1) {
+          } else if (appAction === "tabHistory") {
             root.switchTab("history")
             event.accepted = true
-          } else if ((event.modifiers & Qt.AltModifier) && event.key === Qt.Key_2) {
+          } else if (appAction === "tabPinned") {
             root.switchTab("pinned")
             event.accepted = true
-          } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_P) {
+          } else if (appAction === "togglePin") {
             if (root.cursorActive) root.togglePinIndex(root.selectedIndex)
             event.accepted = true
           } else if (root.activePanel === "preview") {
             if (root.handleEditorKey(event)) event.accepted = true
-          } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_Z) {
+          } else if (appAction === "undoDelete") {
             if (root.pendingUndo) root.undoDelete()
             event.accepted = true
           } else if (Util.editsFilter(event, root.filterText)) {
             root.setFilter(Util.editedFilter(event, root.filterText))
             event.accepted = true
-          } else if (event.key === Qt.Key_Delete) {
-            if (event.modifiers & Qt.ShiftModifier) root.requestClearHistory()
-            else root.removeDisplayIndex(root.selectedIndex)
+          } else if (appAction === "clearHistory") {
+            root.requestClearHistory()
+            event.accepted = true
+          } else if (appAction === "deleteEntry") {
+            root.removeDisplayIndex(root.selectedIndex)
             event.accepted = true
           } else if (event.key === Qt.Key_Right && event.modifiers === Qt.NoModifier && !root.filterText && displayModel.count > 0) {
             root.focusPanel("preview")
