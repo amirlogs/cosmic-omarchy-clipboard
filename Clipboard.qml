@@ -7,6 +7,7 @@ import qs.Commons as Commons
 import qs.Ui
 import "ClipboardHistory.js" as ClipboardHistory
 import "EditorEngine.js" as EditorEngine
+import "VimEngine.js" as VimEngine
 
 Item {
   id: root
@@ -35,6 +36,8 @@ Item {
   property string toastText: ""
   property bool toastCanUndo: false
   property var editorState: EditorEngine.createState("", "")
+  property var vimState: VimEngine.createVimState()
+  property bool vimMode: false
   property int editorRevision: 0
   property bool editorSearchOpen: false
   property string editorSearchQuery: ""
@@ -146,6 +149,7 @@ Item {
       }
     }
     root.editorState = EditorEngine.createState(fullEntryText, row.id)
+    VimEngine.resetVimState(root.vimState, "normal")
     root.editorSearchOpen = false
     root.editorSearchQuery = ""
     root.editorRevision++
@@ -266,6 +270,38 @@ Item {
     var shift = !!(event.modifiers & Qt.ShiftModifier)
     var alt = !!(event.modifiers & Qt.AltModifier)
     var st = root.editorState
+
+    if (root.vimMode) {
+      var keyName = ""
+      if (event.key === Qt.Key_Escape) keyName = "Escape"
+      else if (event.key === Qt.Key_Return) keyName = "Return"
+      else if (event.key === Qt.Key_Enter) keyName = "Enter"
+      else if (event.key === Qt.Key_Backspace) keyName = "Backspace"
+      else if (event.key === Qt.Key_Delete) keyName = "Delete"
+      else if (event.key === Qt.Key_Left) keyName = "Left"
+      else if (event.key === Qt.Key_Right) keyName = "Right"
+      else if (event.key === Qt.Key_Up) keyName = "Up"
+      else if (event.key === Qt.Key_Down) keyName = "Down"
+      else if (event.key === Qt.Key_Home) keyName = "Home"
+      else if (event.key === Qt.Key_End) keyName = "End"
+
+      var vRes = VimEngine.handleKey(root.vimState, st, {
+        keyName: keyName,
+        text: event.text || "",
+        ctrl: ctrl,
+        shift: shift,
+        alt: alt
+      }, EditorEngine)
+
+      if (vRes.yankText) {
+        root.syncTextToClipboard(vRes.yankText, "vim-yank")
+        root.showToast(Commons.I18n.t("clipboard.selectionCopied", "Selection copied"), false)
+      }
+      if (vRes.mutated) root.scheduleEditorCommit(vRes.commitImmediate)
+      root.editorRevision++
+      root.syncEditorView()
+      return true
+    }
 
     if (root.editorSearchOpen) {
       if (event.key === Qt.Key_Escape) {
@@ -867,7 +903,9 @@ Item {
           }
 
           if (event.key === Qt.Key_Escape) {
-            if (root.activePanel === "preview" && root.editorSearchOpen) {
+            if (root.activePanel === "preview" && root.vimMode && root.vimState.mode !== "normal") {
+              root.handleEditorKey(event)
+            } else if (root.activePanel === "preview" && root.editorSearchOpen) {
               root.editorSearchOpen = false
             } else if (root.activePanel === "preview") {
               root.commitEditorChanges()
@@ -1371,12 +1409,52 @@ Item {
                   Text {
                     anchors.verticalCenter: parent.verticalCenter
                     textFormat: Text.PlainText
-                    text: previewPanel.panelFocused ? "EDIT" : "PREVIEW"
+                    text: {
+                      var _rev = root.editorRevision
+                      if (!previewPanel.panelFocused) return "PREVIEW"
+                      if (!root.vimMode) return "EDIT"
+                      var m = root.vimState ? root.vimState.mode : "normal"
+                      if (m === "insert") return "VIM · INSERT"
+                      if (m === "visual") return "VIM · VISUAL"
+                      if (m === "visual_line") return "VIM · V-LINE"
+                      if (m === "visual_block") return "VIM · V-BLOCK"
+                      if (m === "search") return "VIM · /" + (root.vimState ? root.vimState.searchBuffer : "")
+                      return "VIM · NORMAL"
+                    }
                     color: previewPanel.panelFocused ? root.selectedText : root.foreground
                     opacity: previewPanel.panelFocused ? 1.0 : 0.55
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                     font.weight: Font.DemiBold
+                  }
+
+                  Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: vimToggleText.implicitWidth + Style.space(10)
+                    height: Style.space(18)
+                    radius: Style.space(4)
+                    color: root.vimMode ? root.selectedBackground : Util.alpha(root.foreground, 0.08)
+
+                    Text {
+                      id: vimToggleText
+                      anchors.centerIn: parent
+                      textFormat: Text.PlainText
+                      text: root.vimMode ? "Vim: ON" : "Vim: OFF"
+                      color: root.vimMode ? root.selectedText : root.foreground
+                      opacity: root.vimMode ? 1.0 : 0.65
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                    }
+
+                    MouseArea {
+                      anchors.fill: parent
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: {
+                        root.vimMode = !root.vimMode
+                        VimEngine.resetVimState(root.vimState, "normal")
+                        root.editorRevision++
+                      }
+                    }
                   }
 
                   Text {
