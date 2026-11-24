@@ -61,6 +61,10 @@ Item {
   property string pasteTextScript: pluginPath + "/bin/omarchy-clipboard-paste-text"
   property string openScript: pluginPath + "/bin/omarchy-clipboard-open"
   property string writeTextScript: pluginPath + "/bin/omarchy-clipboard-write-text"
+  property string ocrScript: pluginPath + "/bin/omarchy-clipboard-ocr"
+  property string ocrLanguages: "eng"
+  property bool ocrEnabled: true
+  property bool ocrReopenAfter: false
   property string editorSyncTmpPath: Quickshell.env("HOME") + "/.local/state/omarchy/clipboard-editor-sync.tmp"
   property var keybindings: Keybindings.defaultConfig()
   property string keybindingsPath: Quickshell.env("HOME") + "/.config/omarchy-clipboard/keybindings.json"
@@ -121,6 +125,16 @@ Item {
   function toggle() {
     if (root.opened) root.close()
     else root.open("{}")
+  }
+
+  function startOcr(reopenAfter) {
+    if (!root.ocrEnabled) return
+    root.ocrReopenAfter = reopenAfter === true
+    if (root.opened) {
+      root.close()
+      root.ocrReopenAfter = true
+    }
+    ocrOverlay.shown = true
   }
 
   function switchTab(tab) {
@@ -890,6 +904,40 @@ Item {
     }
   }
 
+  Process {
+    id: ocrProc
+    property string regionSpec: ""
+    property string errOutput: ""
+    command: [root.ocrScript, "--langs", root.ocrLanguages, "--region", regionSpec]
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: ocrProc.errOutput = String(text || "").trim()
+    }
+    onExited: function(exitCode) {
+      if (root.ocrReopenAfter && !root.opened) root.open("{}")
+      if (exitCode === 0) {
+        root.showToast(Commons.I18n.t("clipboard.ocrSuccess", "Text extracted to clipboard"), false)
+      } else if (exitCode !== 2) {
+        var msg = ocrProc.errOutput || Commons.I18n.t("clipboard.ocrFailed", "OCR failed")
+        root.showToast(msg, false)
+      }
+      ocrProc.errOutput = ""
+    }
+  }
+
+  OcrOverlay {
+    id: ocrOverlay
+    onRegionSelected: function(region) {
+      ocrProc.regionSpec = region
+      ocrProc.errOutput = ""
+      ocrProc.running = false
+      ocrProc.running = true
+    }
+    onCanceled: {
+      if (root.ocrReopenAfter && !root.opened) root.open("{}")
+    }
+  }
+
   OverlayWindow {
     id: panel
     shown: root.opened
@@ -962,6 +1010,9 @@ Item {
             event.accepted = true
           } else if (appAction === "togglePin") {
             if (root.cursorActive) root.togglePinIndex(root.selectedIndex)
+            event.accepted = true
+          } else if (appAction === "startOcr") {
+            root.startOcr(true)
             event.accepted = true
           } else if (root.activePanel === "preview") {
             if (root.handleEditorKey(event)) event.accepted = true
@@ -1099,6 +1150,33 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.switchTab(modelData.key)
                   }
+                }
+              }
+
+              Rectangle {
+                visible: root.ocrEnabled
+                width: Math.max(Style.space(28), root.headerHeight - Style.space(4))
+                height: Math.max(Style.space(28), root.headerHeight - Style.space(4))
+                radius: root.cornerRadius
+                color: ocrBtnMouse.containsMouse ? root.selectedBackground : "transparent"
+                border.width: ocrBtnMouse.containsMouse ? Style.normalBorderWidth : 0
+                border.color: Util.alpha(root.border, 0.35)
+
+                Text {
+                  anchors.centerIn: parent
+                  text: "󰈭"
+                  color: ocrBtnMouse.containsMouse ? root.selectedText : root.foreground
+                  opacity: ocrBtnMouse.containsMouse ? 1.0 : 0.72
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                }
+
+                MouseArea {
+                  id: ocrBtnMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.startOcr(true)
                 }
               }
             }

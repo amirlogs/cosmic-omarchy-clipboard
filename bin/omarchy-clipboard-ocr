@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# Local screen-region OCR for COSMIC Wayland using grim + slurp + tesseract.
+# Usage:
+#   omarchy-clipboard-ocr [--langs eng] [--region "x,y wxh"] [--image path.png] [--no-copy] [--check-langs]
+
+set -euo pipefail
+umask 077
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LANGS="eng"
+REGION=""
+IMAGE_PATH=""
+NO_COPY=false
+CHECK_LANGS=false
+
+while (( $# > 0 )); do
+  case "$1" in
+    --langs) LANGS="${2:-eng}"; shift 2 ;;
+    --region) REGION="${2:-}"; shift 2 ;;
+    --image) IMAGE_PATH="${2:-}"; shift 2 ;;
+    --no-copy) NO_COPY=true; shift ;;
+    --check-langs) CHECK_LANGS=true; shift ;;
+    *) shift ;;
+  esac
+done
+
+if ! command -v tesseract >/dev/null 2>&1; then
+  echo "OCR engine missing: tesseract is not installed" >&2
+  exit 10
+fi
+
+INSTALLED_LANGS=$(tesseract --list-langs 2>/dev/null | tail -n +2 | tr -d '\r')
+
+if [[ $CHECK_LANGS == "true" ]]; then
+  echo "$INSTALLED_LANGS"
+  exit 0
+fi
+
+# Verify every requested language pack (e.g. "eng+amh") is installed.
+IFS='+' read -ra REQ_LANGS <<< "$LANGS"
+MISSING=()
+for l in "${REQ_LANGS[@]}"; do
+  l="${l// /}"
+  [[ -z $l ]] && continue
+  if ! grep -qx "$l" <<<"$INSTALLED_LANGS"; then
+    MISSING+=("$l")
+  fi
+done
+
+if (( ${#MISSING[@]} > 0 )); then
+  echo "Missing OCR language data: ${MISSING[*]} (install tesseract-langpack-${MISSING[0]})" >&2
+  exit 11
+fi
+
+TMP_PNG=""
+cleanup() {
+  if [[ -n $TMP_PNG ]]; then
+    rm -f -- "$TMP_PNG"
+  fi
+}
+trap cleanup EXIT
+
+if [[ -n $IMAGE_PATH ]]; then
+  [[ -r $IMAGE_PATH ]] || { echo "Image not readable: $IMAGE_PATH" >&2; exit 12; }
+  SRC_PNG="$IMAGE_PATH"
+else
+  if ! command -v grim >/dev/null 2>&1; then
+    echo "Screen capture tool missing: grim is not installed" >&2
+    exit 13
+  fi
+
+  if [[ -z $REGION ]]; then
+    if ! command -v slurp >/dev/null 2>&1; then
+      echo "Region selector missing: slurp is not installed" >&2
+      exit 14
+    fi
+    # Exit 0 cleanly on user cancellation (Escape in slurp).
+    REGION=$(slurp 2>/dev/null) || exit 2
+  fi
+
+  [[ -n ${REGION// /} ]] || exit 2
+
+  TMP_PNG=$(mktemp --tmpdir="${XDG_RUNTIME_DIR:-/tmp}" omarchy-ocr.XXXXXX.png)
+  if ! grim -g "$REGION" "$TMP_PNG" 2>/dev/null; then
+    echo "Screen capture failed for region: $REGION" >&2
+    exit 15
+  fi
+  [[ -s $TMP_PNG ]] || { echo "Captured image is empty" >&2; exit 15; }
+  SRC_PNG="$TMP_PNG"
+fi
+
+TEXT=$(tesseract "$SRC_PNG" stdout -l "$LANGS" --psm 6 2>/dev/null | sed -e 's/[[:space:]]*$//') || {
+  echo "Tesseract OCR failed" >&2
+  exit 16
+}
+
+if [[ -z ${TEXT//[[:space:]]/} ]]; then
+  echo "No text recognized in selected region" >&2
+  exit 3
+fi
+
+if [[ $NO_COPY == "false" ]]; then
+  "$SCRIPT_DIR/omarchy-clipboard-mark-write" --mode tag --source ocr <<<"$TEXT" || {
+    echo "Failed to mark OCR write" >&2
+    exit 17
+  }
+  if ! printf '%s' "$TEXT" | wl-copy; then
+    echo "Failed to copy recognized text to clipboard" >&2
+    exit 18
+  fi
+fi
+
+printf '%s\n' "$TEXT"

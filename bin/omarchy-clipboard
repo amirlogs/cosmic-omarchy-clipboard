@@ -65,6 +65,20 @@ case "$ACTION" in
       ipc open >/dev/null 2>&1 || true
     fi
     ;;
+  ocr)
+    if ipc startOcr >/dev/null 2>&1; then
+      exit 0
+    fi
+    exec "$SCRIPT_DIR/bin/omarchy-clipboard-ocr"
+    ;;
+  open-ocr)
+    if ipc openAndOcr >/dev/null 2>&1; then
+      exit 0
+    fi
+    start_daemon_bg
+    wait_for_daemon || true
+    ipc openAndOcr >/dev/null 2>&1 || true
+    ;;
   kill|stop)
     ipc close >/dev/null 2>&1 || true
     quickshell kill -p "$CONFIG_FILE" 2>/dev/null || true

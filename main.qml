@@ -44,5 +44,15 @@ Scope {
     function activePanel(): string {
       return clipboard.activePanel
     }
+
+    function startOcr(): string {
+      clipboard.startOcr(false)
+      return "ocr"
+    }
+
+    function openAndOcr(): string {
+      clipboard.startOcr(true)
+      return "open-ocr"
+    }
   }
 }
