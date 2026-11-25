@@ -496,12 +496,22 @@ function displayRows(history, query, limit, tr, trn, fmt, mode) {
       previewImage: previewPath,
       path: isImage ? String(entry.path || "") : (isFile && paths.length === 1 ? paths[0] : ""),
       mime: isImage ? String(entry.mime || "image/png") : "text/plain",
+      bytes: isImage ? Number(entry.bytes || 0) : 0,
+      capturedAt: isImage ? String(entry.capturedAt || "") : "",
       index: i
     })
     if (rows.length >= max) break
   }
 
   return rows
+}
+
+function formatBytes(bytes) {
+  var b = Number(bytes || 0)
+  if (!isFinite(b) || b <= 0) return ""
+  if (b < 1024) return b + " B"
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + " KB"
+  return (b / (1024 * 1024)).toFixed(2) + " MB"
 }
 
 if (typeof module !== "undefined") {
@@ -526,6 +536,7 @@ if (typeof module !== "undefined") {
     filePaths: filePaths,
     fileEntryText: fileEntryText,
     fullText: fullText,
-    displayRows: displayRows
+    displayRows: displayRows,
+    formatBytes: formatBytes
   }
 }

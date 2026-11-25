@@ -62,6 +62,9 @@ Item {
   property string openScript: pluginPath + "/bin/omarchy-clipboard-open"
   property string writeTextScript: pluginPath + "/bin/omarchy-clipboard-write-text"
   property string ocrScript: pluginPath + "/bin/omarchy-clipboard-ocr"
+  property string saveImageScript: pluginPath + "/bin/omarchy-clipboard-save-image"
+  property var imageDimensionsMap: ({})
+  property int imageMetaRevision: 0
   property string ocrLanguages: "eng"
   property bool ocrEnabled: true
   property bool ocrReopenAfter: false
@@ -659,6 +662,24 @@ Item {
   onSelectedIndexChanged: {
     root.commitEditorChanges()
     root.loadEditorFromActiveRow(false)
+    root.probeActiveImageDimensions()
+  }
+
+  function probeActiveImageDimensions() {
+    var row = previewPanel.activeRow
+    if (!row || !row.previewImage || !row.path) return
+    if (root.imageDimensionsMap[row.path]) return
+    imageDimsProc.targetPath = row.path
+    imageDimsProc.running = false
+    imageDimsProc.running = true
+  }
+
+  function saveSelectedImage() {
+    var row = previewPanel.activeRow
+    if (!row || !row.path) return
+    saveImageProc.targetPath = row.path
+    saveImageProc.running = false
+    saveImageProc.running = true
   }
 
   function rebuildDisplay() {
@@ -676,6 +697,8 @@ Item {
         previewImage: row.previewImage ? Util.fileUrl(row.previewImage) : "",
         path: row.path,
         mime: row.mime,
+        bytes: row.bytes || 0,
+        capturedAt: row.capturedAt || "",
         historyIndex: row.index
       })
     }
@@ -685,6 +708,7 @@ Item {
     else if (selectedIndex < 0) selectedIndex = 0
 
     root.loadEditorFromActiveRow(false)
+    root.probeActiveImageDimensions()
 
     Qt.callLater(function() {
       if (displayModel.count > 0) resultList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
@@ -935,6 +959,43 @@ Item {
     }
     onCanceled: {
       if (root.ocrReopenAfter && !root.opened) root.open("{}")
+    }
+  }
+
+  Process {
+    id: imageDimsProc
+    property string targetPath: ""
+    command: ["magick", "identify", "-format", "%wx%h", targetPath]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var dims = String(text || "").trim()
+        if (dims && imageDimsProc.targetPath) {
+          var next = Object.assign({}, root.imageDimensionsMap)
+          next[imageDimsProc.targetPath] = dims
+          root.imageDimensionsMap = next
+          root.imageMetaRevision++
+        }
+      }
+    }
+  }
+
+  Process {
+    id: saveImageProc
+    property string targetPath: ""
+    property string savedOut: ""
+    command: [root.saveImageScript, targetPath]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: saveImageProc.savedOut = String(text || "").trim()
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0 && saveImageProc.savedOut) {
+        root.showToast("Saved: " + ClipboardHistory.fileName(saveImageProc.savedOut), false)
+      } else {
+        root.showToast("Failed to save image", false)
+      }
+      saveImageProc.savedOut = ""
     }
   }
 
@@ -1423,11 +1484,11 @@ Item {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: editorFindBar.visible ? editorFindBar.bottom : parent.top
-                anchors.bottom: editorStatusBar.visible ? editorStatusBar.top : parent.bottom
+                anchors.bottom: editorStatusBar.visible ? editorStatusBar.top : (imageStatusBar.visible ? imageStatusBar.top : parent.bottom)
                 anchors.leftMargin: root.contentMargin
                 anchors.rightMargin: Style.space(8)
                 anchors.topMargin: editorFindBar.visible ? Style.space(6) : 0
-                anchors.bottomMargin: editorStatusBar.visible ? Style.space(6) : 0
+                anchors.bottomMargin: (editorStatusBar.visible || imageStatusBar.visible) ? Style.space(6) : 0
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
                 contentWidth: width
@@ -1594,6 +1655,90 @@ Item {
                     opacity: 0.85
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
+                  }
+                }
+              }
+
+              Rectangle {
+                id: imageStatusBar
+                visible: !!previewPanel.activeRow && !!previewPanel.activeRow.previewImage
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.leftMargin: root.contentMargin
+                height: visible ? Style.space(28) : 0
+                color: "transparent"
+
+                Row {
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(8)
+
+                  Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: {
+                      var _rev = root.imageMetaRevision
+                      var r = previewPanel.activeRow
+                      if (!r || !r.previewImage) return ""
+                      var parts = []
+                      var dims = r.path ? root.imageDimensionsMap[r.path] : ""
+                      if (dims) parts.push(dims)
+                      var sz = ClipboardHistory.formatBytes(r.bytes)
+                      if (sz) parts.push(sz)
+                      if (r.mime) parts.push(r.mime)
+                      return parts.join(" · ")
+                    }
+                    color: root.foreground
+                    opacity: 0.68
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+
+                Row {
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(4)
+
+                  Repeater {
+                    model: [
+                      { action: "copy", label: "Copy" },
+                      { action: "save", label: "Save" },
+                      { action: "pin", label: (previewPanel.activeRow && previewPanel.activeRow.pinned) ? "Unpin" : "Pin" },
+                      { action: "delete", label: "Delete" }
+                    ]
+
+                    Rectangle {
+                      required property var modelData
+                      width: imgBtnText.implicitWidth + Style.space(12)
+                      height: Style.space(22)
+                      radius: Style.space(4)
+                      color: imgBtnMouse.containsMouse ? root.selectedBackground : Util.alpha(root.foreground, 0.08)
+
+                      Text {
+                        id: imgBtnText
+                        anchors.centerIn: parent
+                        textFormat: Text.PlainText
+                        text: modelData.label
+                        color: imgBtnMouse.containsMouse ? root.selectedText : root.foreground
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.caption
+                      }
+
+                      MouseArea {
+                        id: imgBtnMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                          if (modelData.action === "copy") root.copyIndex(root.selectedIndex)
+                          else if (modelData.action === "save") root.saveSelectedImage()
+                          else if (modelData.action === "pin") root.togglePinIndex(root.selectedIndex)
+                          else if (modelData.action === "delete") root.removeDisplayIndex(root.selectedIndex)
+                        }
+                      }
+                    }
                   }
                 }
               }

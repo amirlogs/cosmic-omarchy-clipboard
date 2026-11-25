@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Saves a clipboard image to ~/Pictures (or XDG_PICTURES_DIR) and prints the path.
+
+set -euo pipefail
+
+SRC="${1:-}"
+[[ -r $SRC ]] || { echo "Image not found: $SRC" >&2; exit 1; }
+
+PIC_DIR="${XDG_PICTURES_DIR:-$HOME/Pictures}/Omarchy-Clipboard"
+mkdir -p "$PIC_DIR"
+
+ext="${SRC##*.}"
+[[ -n $ext && $ext != "$SRC" ]] || ext="png"
+
+stamp=$(date +'%Y%m%d-%H%M%S')
+dest="$PIC_DIR/clipboard-$stamp.$ext"
+n=1
+while [[ -e $dest ]]; do
+  dest="$PIC_DIR/clipboard-$stamp-$n.$ext"
+  n=$((n + 1))
+done
+
+cp -- "$SRC" "$dest"
+printf '%s\n' "$dest"
