@@ -241,6 +241,25 @@ test("serialize keeps pinned entries outside the unpinned limit", () => {
   assert.deepEqual(out.filter(e => !e.pinned).map(e => e.text), ["u0", "u1"])
 })
 
+test("displayRows supports unified all/history/pinned and text/image filters", () => {
+  const h = [
+    { id: "t1", type: "text", text: "alpha", pinned: false },
+    { id: "i1", type: "image", path: "/tmp/a.png", mime: "image/png", pinned: true },
+    { id: "t2", type: "text", text: "beta", pinned: true }
+  ]
+  assert.deepEqual(H.displayRows(h, "", 50, null, null, null, "all", "all").map(r => r.id), ["t1", "i1", "t2"])
+  assert.deepEqual(H.displayRows(h, "", 50, null, null, null, "all", "text").map(r => r.id), ["t1", "t2"])
+  assert.deepEqual(H.displayRows(h, "", 50, null, null, null, "all", "image").map(r => r.id), ["i1"])
+  assert.deepEqual(H.displayRows(h, "", 50, null, null, null, "pinned", "text").map(r => r.id), ["t2"])
+})
+
+test("highlightText escapes HTML and highlights matched query safely", () => {
+  const out = H.highlightText("<script>alert(1)</script> foo", "foo", "#abcdef")
+  assert.equal(out.includes("<script>"), false)
+  assert.equal(out.includes("&lt;script&gt;"), true)
+  assert.equal(out.includes('<b><font color="#abcdef">foo</font></b>'), true)
+})
+
 test("the bundled English catalog defines every key the UI looks up", () => {
   const catalog = require("../i18n/en.json")
   const keys = [

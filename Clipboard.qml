@@ -32,6 +32,7 @@ Item {
   property bool clearConfirmOpen: false
   property var history: []
   property string activeTab: "history"
+  property string typeFilter: "all"
   property string activePanel: "list"
   property var pendingUndo: null
   property string toastText: ""
@@ -141,7 +142,7 @@ Item {
   }
 
   function switchTab(tab) {
-    if (tab !== "history" && tab !== "pinned") return
+    if (tab !== "all" && tab !== "history" && tab !== "pinned") return
     root.commitEditorChanges()
     root.editorSearchOpen = false
     root.editorSearchQuery = ""
@@ -152,6 +153,15 @@ Item {
     root.disarmPointer()
     root.rebuildDisplay()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function setTypeFilter(kind) {
+    if (kind !== "all" && kind !== "text" && kind !== "image") return
+    root.typeFilter = kind
+    root.selectedIndex = 0
+    root.cursorActive = true
+    root.disarmPointer()
+    root.rebuildDisplay()
   }
 
   function isEditableActiveRow() {
@@ -683,7 +693,7 @@ Item {
   }
 
   function rebuildDisplay() {
-    var rows = ClipboardHistory.displayRows(root.history, root.filterText, 50, Commons.I18n.t, Commons.I18n.tn, Commons.I18n.formatNumber, root.activeTab)
+    var rows = ClipboardHistory.displayRows(root.history, root.filterText, 50, Commons.I18n.t, Commons.I18n.tn, Commons.I18n.formatNumber, root.activeTab, root.typeFilter)
 
     displayModel.clear()
     for (var i = 0; i < rows.length; i++) {
@@ -1179,6 +1189,7 @@ Item {
 
               Repeater {
                 model: [
+                  { key: "all", label: "All", count: root.history.length },
                   { key: "history", label: Commons.I18n.t("clipboard.history", "History"), count: root.historyCount },
                   { key: "pinned", label: Commons.I18n.t("clipboard.pinned", "Pinned"), count: root.pinnedCount }
                 ]
@@ -1249,7 +1260,54 @@ Item {
           height: parent.height - root.headerHeight - root.contentSpacing
 
           Row {
-            anchors.fill: parent
+            id: typeFilterRow
+            anchors.left: parent.left
+            anchors.top: parent.top
+            height: Style.space(24)
+            spacing: Style.space(6)
+            z: 2
+
+            Repeater {
+              model: [
+                { key: "all", label: "All types" },
+                { key: "text", label: "Text" },
+                { key: "image", label: "Images" }
+              ]
+
+              Rectangle {
+                required property var modelData
+                readonly property bool active: root.typeFilter === modelData.key
+                width: typeLabel.implicitWidth + Style.space(14)
+                height: Style.space(22)
+                radius: Math.max(4, root.cornerRadius - 4)
+                color: active ? root.selectedBackground : Util.alpha(root.foreground, 0.05)
+
+                Text {
+                  id: typeLabel
+                  anchors.centerIn: parent
+                  textFormat: Text.PlainText
+                  text: modelData.label
+                  color: active ? root.selectedText : root.foreground
+                  opacity: active ? 1.0 : 0.65
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.setTypeFilter(modelData.key)
+                }
+              }
+            }
+          }
+
+          Row {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: typeFilterRow.bottom
+            anchors.topMargin: Style.space(6)
+            anchors.bottom: parent.bottom
             spacing: 0
 
             Item {
@@ -1317,10 +1375,12 @@ Item {
                     }
 
                     Text {
-                      textFormat: Text.PlainText
+                      textFormat: root.filterText ? Text.StyledText : Text.PlainText
                       width: parent.width - (row.previewImage.length > 0 ? parent.height + parent.spacing : 0) - (rowActions.visible ? rowActions.width + parent.spacing : 0)
                       height: parent.height
-                      text: row.previewText
+                      text: root.filterText
+                        ? ClipboardHistory.highlightText(row.previewText, root.filterText, root.selectedText)
+                        : row.previewText
                       color: row.hasCursor ? root.selectedText : root.foreground
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.title

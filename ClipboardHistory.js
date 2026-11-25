@@ -465,10 +465,11 @@ function cappedEntry(entry) {
   return capped
 }
 
-function displayRows(history, query, limit, tr, trn, fmt, mode) {
+function displayRows(history, query, limit, tr, trn, fmt, mode, typeFilter) {
   var values = Array.isArray(history) ? history : []
   var needle = String(query || "").trim().toLowerCase()
   var tab = String(mode || "all")
+  var kind = String(typeFilter || "all")
   var max = limit === undefined || limit === null ? 50 : Number(limit)
   if (isNaN(max)) max = 50
   max = Math.max(0, max)
@@ -481,6 +482,8 @@ function displayRows(history, query, limit, tr, trn, fmt, mode) {
     if (!entry) continue
     if (tab === "history" && entry.pinned === true) continue
     if (tab === "pinned" && entry.pinned !== true) continue
+    if (kind === "text" && entry.type !== "text") continue
+    if (kind === "image" && entry.type !== "image") continue
     if (needle && searchableText(entry).toLowerCase().indexOf(needle) < 0) continue
 
     var paths = filePaths(entry)
@@ -504,6 +507,27 @@ function displayRows(history, query, limit, tr, trn, fmt, mode) {
   }
 
   return rows
+}
+
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+}
+
+function highlightText(text, query, colorHex) {
+  var raw = String(text || "")
+  var q = String(query || "").trim()
+  if (!q) return escapeHtml(raw)
+  var idx = raw.toLowerCase().indexOf(q.toLowerCase())
+  if (idx < 0) return escapeHtml(raw)
+  var before = escapeHtml(raw.slice(0, idx))
+  var match = escapeHtml(raw.slice(idx, idx + q.length))
+  var after = escapeHtml(raw.slice(idx + q.length))
+  var col = String(colorHex || "#ffffff")
+  return before + "<b><font color=\"" + escapeHtml(col) + "\">" + match + "</font></b>" + after
 }
 
 function formatBytes(bytes) {
@@ -537,6 +561,7 @@ if (typeof module !== "undefined") {
     fileEntryText: fileEntryText,
     fullText: fullText,
     displayRows: displayRows,
-    formatBytes: formatBytes
+    formatBytes: formatBytes,
+    highlightText: highlightText
   }
 }
