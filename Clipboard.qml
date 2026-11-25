@@ -64,6 +64,8 @@ Item {
   property string writeTextScript: pluginPath + "/bin/omarchy-clipboard-write-text"
   property string ocrScript: pluginPath + "/bin/omarchy-clipboard-ocr"
   property string saveImageScript: pluginPath + "/bin/omarchy-clipboard-save-image"
+  property string cleanupImagesScript: pluginPath + "/bin/omarchy-clipboard-cleanup-images"
+  property int autoCleanupHours: 0
   property var imageDimensionsMap: ({})
   property int imageMetaRevision: 0
   property string ocrLanguages: "eng"
@@ -589,8 +591,20 @@ Item {
   }
 
   function saveHistory() {
+    if (root.autoCleanupHours > 0) {
+      root.history = ClipboardHistory.pruneByAge(root.history, root.autoCleanupHours)
+    }
     // Pinned entries are kept outside the unpinned limit by serialize().
     historyFile.setText(ClipboardHistory.serialize(root.history, root.historyLimit))
+  }
+
+  function pruneOlderThanHours(hours) {
+    root.history = ClipboardHistory.pruneByAge(root.history, hours)
+    root.saveHistory()
+    root.rebuildDisplay()
+    cleanupImagesProc.running = false
+    cleanupImagesProc.running = true
+    root.showToast("Cleaned old unpinned entries", false)
   }
 
   function addClipboardEntry(entry) {
@@ -1007,6 +1021,11 @@ Item {
       }
       saveImageProc.savedOut = ""
     }
+  }
+
+  Process {
+    id: cleanupImagesProc
+    command: [root.cleanupImagesScript]
   }
 
   OverlayWindow {

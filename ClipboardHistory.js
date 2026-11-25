@@ -530,6 +530,64 @@ function highlightText(text, query, colorHex) {
   return before + "<b><font color=\"" + escapeHtml(col) + "\">" + match + "</font></b>" + after
 }
 
+function entryTimestampMs(entry) {
+  if (!entry) return 0
+  var ts = entry.lastUsedAt || entry.updatedAt || entry.createdAt || ""
+  if (!ts) return 0
+  var ms = Date.parse(ts)
+  return isNaN(ms) ? 0 : ms
+}
+
+function pruneByAge(history, maxAgeHours, nowMs) {
+  var values = Array.isArray(history) ? history : []
+  var hours = Number(maxAgeHours || 0)
+  if (!isFinite(hours) || hours <= 0) return values.slice()
+  var ref = typeof nowMs === "number" && isFinite(nowMs) ? nowMs : Date.now()
+  var cutoff = ref - hours * 3600 * 1000
+  var next = []
+  for (var i = 0; i < values.length; i++) {
+    var e = normalizeEntry(values[i], undefined, i)
+    if (!e) continue
+    if (e.pinned === true) { next.push(e); continue }
+    var ms = entryTimestampMs(e)
+    if (ms === 0 || ms >= cutoff) next.push(e)
+  }
+  return next
+}
+
+function pruneBeforeDate(history, cutoffIsoOrMs) {
+  var values = Array.isArray(history) ? history : []
+  var cutoff = typeof cutoffIsoOrMs === "number" ? cutoffIsoOrMs : Date.parse(String(cutoffIsoOrMs || ""))
+  if (!isFinite(cutoff)) return values.slice()
+  var next = []
+  for (var i = 0; i < values.length; i++) {
+    var e = normalizeEntry(values[i], undefined, i)
+    if (!e) continue
+    if (e.pinned === true) { next.push(e); continue }
+    var ms = entryTimestampMs(e)
+    if (ms === 0 || ms >= cutoff) next.push(e)
+  }
+  return next
+}
+
+function pruneInRange(history, startIsoOrMs, endIsoOrMs) {
+  var values = Array.isArray(history) ? history : []
+  var start = typeof startIsoOrMs === "number" ? startIsoOrMs : Date.parse(String(startIsoOrMs || ""))
+  var end = typeof endIsoOrMs === "number" ? endIsoOrMs : Date.parse(String(endIsoOrMs || ""))
+  if (!isFinite(start) || !isFinite(end)) return values.slice()
+  var lo = Math.min(start, end)
+  var hi = Math.max(start, end)
+  var next = []
+  for (var i = 0; i < values.length; i++) {
+    var e = normalizeEntry(values[i], undefined, i)
+    if (!e) continue
+    if (e.pinned === true) { next.push(e); continue }
+    var ms = entryTimestampMs(e)
+    if (ms === 0 || ms < lo || ms > hi) next.push(e)
+  }
+  return next
+}
+
 function formatBytes(bytes) {
   var b = Number(bytes || 0)
   if (!isFinite(b) || b <= 0) return ""
@@ -562,6 +620,9 @@ if (typeof module !== "undefined") {
     fullText: fullText,
     displayRows: displayRows,
     formatBytes: formatBytes,
-    highlightText: highlightText
+    highlightText: highlightText,
+    pruneByAge: pruneByAge,
+    pruneBeforeDate: pruneBeforeDate,
+    pruneInRange: pruneInRange
   }
 }
