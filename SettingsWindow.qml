@@ -27,7 +27,7 @@ FloatingWindow {
   signal windowClosed()
 
   visible: opened
-  title: "COSMIC Clipboard Settings"
+  title: "Clipboard Settings"
   implicitWidth: Math.min(900, Screen.width - 40)
   implicitHeight: Math.min(640, Screen.height - 40)
   color: "transparent"
@@ -61,13 +61,25 @@ FloatingWindow {
     return win.installedOcrLangs.indexOf(code) >= 0
   }
 
+  function comboFor(scope, action) {
+    return (win.keybindings[scope] && win.keybindings[scope][action]) || ""
+  }
+
+  function isConflicted(scope, action) {
+    for (var i = 0; i < win.keyConflicts.length; i++) {
+      var c = win.keyConflicts[i]
+      if ((c.scopeA === scope && c.actionA === action) || (c.scopeB === scope && c.actionB === action)) return true
+    }
+    return false
+  }
+
   readonly property var categories: [
-    { key: "general", label: "General" },
-    { key: "keys", label: "Keyboard & Shortcuts" },
-    { key: "editor", label: "Editor" },
+    { key: "general",    label: "General" },
+    { key: "keys",       label: "Keyboard & Shortcuts" },
+    { key: "editor",     label: "Editor" },
     { key: "navigation", label: "Navigation" },
-    { key: "clipboard", label: "Clipboard" },
-    { key: "ocr", label: "OCR" },
+    { key: "clipboard",  label: "Clipboard" },
+    { key: "ocr",        label: "OCR" },
     { key: "appearance", label: "Appearance" }
   ]
 
@@ -77,7 +89,6 @@ FloatingWindow {
     radius: Style.cornerRadius
     color: Commons.Color.menu.background
     borderSpec: Border.surfaceSpec("menu", "border", Commons.Color.menu.border, Math.max(1, Style.space(2)))
-    padding: Style.space(16)
 
     Item {
       id: settingsKeys
@@ -126,96 +137,150 @@ FloatingWindow {
 
     Row {
       anchors.fill: parent
-      anchors.topMargin: frame.contentTopInset
-      anchors.bottomMargin: frame.contentBottomInset
-      anchors.leftMargin: frame.contentLeftInset
-      anchors.rightMargin: frame.contentRightInset
-      spacing: Style.space(16)
+      anchors.margins: Style.space(16)
+      spacing: 0
 
-      // Sidebar
-      Column {
-        width: Style.space(220)
+      // ── SIDEBAR ──────────────────────────────────────────────────────────
+      Item {
+        width: Style.space(196)
         height: parent.height
-        spacing: Style.space(8)
 
-        Text {
-          textFormat: Text.PlainText
-          text: "Settings"
-          color: Commons.Color.menu.text
-          font.family: Style.font.menuFamily
-          font.pixelSize: Style.space(20)
-          font.weight: Font.DemiBold
-        }
+        Column {
+          anchors.top: parent.top
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.bottom: resetLinkItem.top
+          spacing: 0
 
-        Rectangle {
-          width: parent.width
-          height: Style.space(36)
-          radius: Style.cornerRadius
-          color: Util.alpha(Commons.Color.menu.text, 0.08)
-
-          Text {
-            anchors.fill: parent
-            anchors.leftMargin: Style.space(12)
-            anchors.rightMargin: Style.space(12)
-            verticalAlignment: Text.AlignVCenter
-            textFormat: Text.PlainText
-            text: win.searchQuery || "Search settings…"
-            color: Commons.Color.menu.text
-            opacity: win.searchQuery ? 1.0 : 0.55
-            font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.title
-            elide: Text.ElideRight
-          }
-        }
-
-        Repeater {
-          model: win.categories
-
-          Rectangle {
-            required property var modelData
-            readonly property bool active: !win.searchQuery && win.activeCategory === modelData.key
+          // Window title
+          Item {
             width: parent.width
-            height: Style.space(38)
-            radius: Style.cornerRadius
-            color: active ? Commons.Color.menu.selectedBackground : "transparent"
+            height: Style.space(44)
 
             Text {
-              anchors.verticalCenter: parent.verticalCenter
               anchors.left: parent.left
-              anchors.leftMargin: Style.space(12)
-              textFormat: Text.PlainText
-              text: modelData.label
-              color: active ? Commons.Color.menu.selectedText : Commons.Color.menu.text
+              anchors.leftMargin: Style.space(14)
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Settings"
+              color: Commons.Color.menu.text
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.title
+              font.pixelSize: Style.font.heading
+              font.weight: Font.DemiBold
             }
+          }
 
-            MouseArea {
+          // Search box
+          Rectangle {
+            width: parent.width
+            height: Style.space(34)
+            radius: Math.max(4, Style.space(5))
+            color: Util.alpha(Commons.Color.menu.text, 0.07)
+            border.width: 1
+            border.color: win.searchQuery.length > 0
+              ? Util.alpha(Commons.Color.accent, 0.5)
+              : Util.alpha(Commons.Color.menu.text, 0.14)
+
+            Text {
               anchors.fill: parent
-              cursorShape: Qt.PointingHandCursor
-              onClicked: {
-                win.searchQuery = ""
-                win.activeCategory = modelData.key
+              anchors.leftMargin: Style.space(10)
+              anchors.rightMargin: Style.space(10)
+              verticalAlignment: Text.AlignVCenter
+              textFormat: Text.PlainText
+              text: win.searchQuery || "Search settings…"
+              color: Commons.Color.menu.text
+              opacity: win.searchQuery ? 1.0 : 0.45
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+          }
+
+          Item { width: 1; height: Style.space(8) }
+
+          // Category items
+          Repeater {
+            model: win.categories
+
+            Item {
+              required property var modelData
+              readonly property bool active: !win.searchQuery && win.activeCategory === modelData.key
+
+              width: parent.width
+              height: Style.space(38)
+
+              // Active left bar
+              Rectangle {
+                visible: active
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.topMargin: Style.space(4)
+                anchors.bottomMargin: Style.space(4)
+                width: Style.space(2)
+                radius: Style.space(1)
+                color: Commons.Color.menu.selectedText
+              }
+
+              // Active background
+              Rectangle {
+                visible: active
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(2)
+                radius: Math.max(4, Style.space(5))
+                color: Util.alpha(Commons.Color.menu.selectedText, 0.08)
+              }
+
+              // Hover background
+              Rectangle {
+                visible: !active && sidebarItemMouse.containsMouse
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(2)
+                radius: Math.max(4, Style.space(5))
+                color: Util.alpha(Commons.Color.menu.text, 0.05)
+              }
+
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                anchors.leftMargin: Style.space(14)
+                textFormat: Text.PlainText
+                text: modelData.label
+                color: active ? Commons.Color.menu.selectedText : Commons.Color.menu.text
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.body
+                font.weight: active ? Font.DemiBold : Font.Normal
+                opacity: active ? 1.0 : 0.72
+              }
+
+              MouseArea {
+                id: sidebarItemMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  win.searchQuery = ""
+                  win.activeCategory = modelData.key
+                }
               }
             }
           }
         }
 
-        Item { width: 1; height: Style.space(12) }
-
-        Rectangle {
+        // Reset to Defaults — anchored to bottom
+        Item {
+          id: resetLinkItem
           width: parent.width
-          height: Style.space(36)
-          radius: Style.cornerRadius
-          color: resetMouse.containsMouse ? Util.alpha(Commons.Color.urgent, 0.25) : Util.alpha(Commons.Color.menu.text, 0.08)
+          height: Style.space(32)
+          anchors.bottom: parent.bottom
 
           Text {
-            anchors.centerIn: parent
-            textFormat: Text.PlainText
+            anchors.left: parent.left
+            anchors.leftMargin: Style.space(14)
+            anchors.verticalCenter: parent.verticalCenter
             text: "Reset to Defaults"
-            color: Commons.Color.menu.text
+            color: resetMouse.containsMouse ? Commons.Color.urgent : Util.alpha(Commons.Color.urgent, 0.7)
             font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.title
+            font.pixelSize: Style.font.bodySmall
           }
 
           MouseArea {
@@ -228,419 +293,643 @@ FloatingWindow {
         }
       }
 
+      // Sidebar divider
       Rectangle {
-        width: Style.normalBorderWidth
+        width: 1
         height: parent.height
-        color: Util.alpha(Commons.Color.menu.border, 0.28)
+        color: Util.alpha(Commons.Color.menu.border, 0.2)
       }
 
-      // Content pane
+      Item { width: Style.space(16); height: 1 }
+
+      // ── CONTENT PANE ─────────────────────────────────────────────────────
       Flickable {
         id: contentFlick
-        width: parent.width - Style.space(250)
+        width: parent.width - Style.space(196) - 1 - Style.space(16)
         height: parent.height
         clip: true
-        contentWidth: width - Style.space(10)
-        contentHeight: contentCol.implicitHeight
+        contentWidth: width - Style.space(12)
+        contentHeight: contentCol.implicitHeight + Style.space(24)
         boundsBehavior: Flickable.StopAtBounds
 
+        // Scrollbar thumb
         Rectangle {
           visible: contentFlick.contentHeight > contentFlick.height
           anchors.right: parent.right
-          anchors.rightMargin: Style.space(1)
+          anchors.rightMargin: Style.space(2)
           y: Math.max(0, contentFlick.visibleArea.yPosition * contentFlick.height)
-          width: Style.space(4)
+          width: Style.space(3)
           height: Math.max(Style.space(24), contentFlick.visibleArea.heightRatio * contentFlick.height)
           radius: Style.space(2)
           color: Commons.Color.menu.text
-          opacity: 0.35
+          opacity: 0.3
           z: 5
         }
 
         Column {
           id: contentCol
           width: parent.width
-          spacing: Style.space(14)
+          spacing: Style.space(24)
 
-          // GENERAL
+          // ── GENERAL ────────────────────────────────────────────────────
           Column {
-            visible: win.searchQuery ? SettingsStore.matchesSettingSearch("Default Tab Close on Copy", "General startup", win.searchQuery) : win.activeCategory === "general"
+            visible: win.searchQuery
+              ? SettingsStore.matchesSettingSearch("Default Tab Close on Copy Startup Behavior", "General", win.searchQuery)
+              : win.activeCategory === "general"
             width: parent.width
-            spacing: Style.space(10)
+            spacing: 0
 
-            Text { text: "General"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading; font.weight: Font.DemiBold }
-
-            Row {
-              spacing: Style.space(8)
-              Text { anchors.verticalCenter: parent.verticalCenter; text: "Default Tab:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
-              Repeater {
-                model: ["history", "pinned", "all"]
-                Rectangle {
-                  required property string modelData
-                  readonly property bool on: win.settings.general.defaultTab === modelData
-                  width: dtLbl.implicitWidth + Style.space(16); height: Style.space(34); radius: Style.cornerRadius
-                  color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: dtLbl; anchors.centerIn: parent; text: modelData; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title }
-                  MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.general.defaultTab = modelData }) }
-                }
+            // Page title
+            Item {
+              width: parent.width
+              height: Style.space(36)
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "General"
+                color: Commons.Color.menu.selectedText
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.heading
+                font.weight: Font.DemiBold
               }
             }
 
-            Rectangle {
-              width: cocLbl.implicitWidth + Style.space(22); height: Style.space(34); radius: Style.cornerRadius
-              color: win.settings.general.closeOnCopy ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-              Text { id: cocLbl; anchors.centerIn: parent; text: "Close Overlay After Copy: " + (win.settings.general.closeOnCopy ? "On" : "Off"); color: win.settings.general.closeOnCopy ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title }
-              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.general.closeOnCopy = !s.general.closeOnCopy }) }
+            SettingsSection { title: "Startup"; width: parent.width }
+
+            SettingsRow {
+              width: parent.width
+              label: "Default tab"
+              description: "Which tab opens when the clipboard is shown."
+              SSegment {
+                model: [
+                  { val: "history", label: "History" },
+                  { val: "pinned",  label: "Pinned" },
+                  { val: "all",     label: "All" }
+                ]
+                currentValue: win.settings.general.defaultTab
+                onSelected: function(v) { win.mutateSetting(function(s) { s.general.defaultTab = v }) }
+              }
+            }
+
+            SettingsSection { title: "Behavior"; width: parent.width }
+
+            SettingsRow {
+              width: parent.width
+              label: "Close after copy"
+              description: "Dismiss the clipboard overlay after pasting an entry."
+              SSwitch {
+                checked: win.settings.general.closeOnCopy
+                onToggled: win.mutateSetting(function(s) { s.general.closeOnCopy = !s.general.closeOnCopy })
+              }
             }
           }
 
-          // KEYBOARD & SHORTCUTS
+          // ── KEYBOARD & SHORTCUTS ────────────────────────────────────────
           Column {
-            visible: win.searchQuery ? SettingsStore.matchesSettingSearch("Keyboard Shortcuts Keybindings Vim Global", "Shortcuts", win.searchQuery) : win.activeCategory === "keys"
+            visible: win.searchQuery
+              ? SettingsStore.matchesSettingSearch("Keyboard Shortcuts Keybindings Vim Global App Editor", "Shortcuts", win.searchQuery)
+              : win.activeCategory === "keys"
             width: parent.width
-            spacing: Style.space(10)
+            spacing: 0
 
-            Text { text: "Keyboard & Shortcuts"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading; font.weight: Font.DemiBold }
-
-            Text {
-              visible: win.keyConflicts.length > 0
-              text: "Conflict detected: " + (win.keyConflicts.length > 0 ? (win.keyConflicts[0].combo + " (" + win.keyConflicts[0].actionA + " vs " + win.keyConflicts[0].actionB + ")") : "")
-              color: Commons.Color.urgent
-              font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.heading
-              wrapMode: Text.WordWrap
+            Item {
               width: parent.width
+              height: Style.space(36)
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Keyboard & Shortcuts"
+                color: Commons.Color.menu.selectedText
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.heading
+                font.weight: Font.DemiBold
+              }
             }
+
+            WarningBanner {
+              visible: win.keyConflicts.length > 0
+              width: parent.width
+              message: win.keyConflicts.length > 0
+                ? ("Shortcut conflict: " + win.keyConflicts[0].combo + " is used by both " + win.keyConflicts[0].actionA + " and " + win.keyConflicts[0].actionB + ".")
+                : ""
+            }
+
+            SettingsSection { title: "Global"; width: parent.width }
 
             Repeater {
               model: [
-                { scope: "global", action: "openClipboard", label: "Global: Open Clipboard" },
-                { scope: "global", action: "ocrExtract", label: "Global: Screen OCR" },
-                { scope: "global", action: "clipboardAndOcr", label: "Global: Clipboard + OCR" },
-                { scope: "app", action: "switchPanel", label: "App: Switch Panel" },
-                { scope: "app", action: "switchTab", label: "App: Next Tab" },
-                { scope: "app", action: "togglePin", label: "App: Pin / Unpin" },
-                { scope: "app", action: "deleteEntry", label: "App: Delete Entry" },
-                { scope: "app", action: "undoDelete", label: "App: Undo Delete" },
-                { scope: "app", action: "startOcr", label: "App: Start OCR" },
-                { scope: "app", action: "openSettings", label: "App: Open Settings" },
-                { scope: "normal", action: "undo", label: "Editor (Normal): Undo" },
-                { scope: "normal", action: "redo", label: "Editor (Normal): Redo" },
-                { scope: "normal", action: "copySelection", label: "Editor (Normal): Copy Selection" },
-                { scope: "normal", action: "paste", label: "Editor (Normal): Paste" },
-                { scope: "normal", action: "find", label: "Editor (Normal): Find" },
-                { scope: "vim", action: "undo", label: "Editor (Vim): Undo" },
-                { scope: "vim", action: "redo", label: "Editor (Vim): Redo" }
+                { scope: "global", action: "openClipboard",   label: "Open clipboard",     description: "Show or hide the clipboard overlay." },
+                { scope: "global", action: "ocrExtract",      label: "Screen OCR",          description: "Select a screen region and extract text." },
+                { scope: "global", action: "clipboardAndOcr", label: "Clipboard + OCR",     description: "Open the clipboard and trigger OCR." }
               ]
-
-              Row {
+              KeycapRow {
                 required property var modelData
                 width: parent.width
-                height: Style.space(36)
-                spacing: Style.space(8)
+                label: modelData.label
+                description: modelData.description
+                comboString: win.comboFor(modelData.scope, modelData.action)
+                recording: win.recordingScope === modelData.scope && win.recordingAction === modelData.action
+                conflicted: win.isConflicted(modelData.scope, modelData.action)
+                onEdit: {
+                  win.recordingScope = modelData.scope
+                  win.recordingAction = modelData.action
+                  settingsKeys.forceActiveFocus()
+                }
+                onClear: win.recordBinding(modelData.scope, modelData.action, "")
+              }
+            }
+
+            SettingsSection { title: "Application"; width: parent.width }
+
+            Repeater {
+              model: [
+                { scope: "app", action: "switchPanel",   label: "Switch panel",        description: "Move focus between the list and editor." },
+                { scope: "app", action: "switchTab",     label: "Next tab",             description: "Cycle through History / Pinned / All." },
+                { scope: "app", action: "togglePin",     label: "Pin / Unpin",          description: "Toggle the pin state of the selected entry." },
+                { scope: "app", action: "deleteEntry",   label: "Delete entry",         description: "Remove the selected entry from history." },
+                { scope: "app", action: "undoDelete",    label: "Undo delete",          description: "Restore the last deleted entry." },
+                { scope: "app", action: "startOcr",      label: "Start OCR",            description: "Begin a screen-region capture." },
+                { scope: "app", action: "openSettings",  label: "Open settings",        description: "Open the advanced settings window." }
+              ]
+              KeycapRow {
+                required property var modelData
+                width: parent.width
+                label: modelData.label
+                description: modelData.description
+                comboString: win.comboFor(modelData.scope, modelData.action)
+                recording: win.recordingScope === modelData.scope && win.recordingAction === modelData.action
+                conflicted: win.isConflicted(modelData.scope, modelData.action)
+                onEdit: {
+                  win.recordingScope = modelData.scope
+                  win.recordingAction = modelData.action
+                  settingsKeys.forceActiveFocus()
+                }
+                onClear: win.recordBinding(modelData.scope, modelData.action, "")
+              }
+            }
+
+            SettingsSection { title: "Normal editor"; width: parent.width }
+
+            Repeater {
+              model: [
+                { scope: "normal", action: "undo",           label: "Undo" },
+                { scope: "normal", action: "redo",           label: "Redo" },
+                { scope: "normal", action: "copySelection",  label: "Copy selection" },
+                { scope: "normal", action: "paste",          label: "Paste" },
+                { scope: "normal", action: "find",           label: "Find in text" }
+              ]
+              KeycapRow {
+                required property var modelData
+                width: parent.width
+                label: modelData.label
+                comboString: win.comboFor(modelData.scope, modelData.action)
+                recording: win.recordingScope === modelData.scope && win.recordingAction === modelData.action
+                conflicted: win.isConflicted(modelData.scope, modelData.action)
+                onEdit: {
+                  win.recordingScope = modelData.scope
+                  win.recordingAction = modelData.action
+                  settingsKeys.forceActiveFocus()
+                }
+                onClear: win.recordBinding(modelData.scope, modelData.action, "")
+              }
+            }
+
+            SettingsSection { title: "Vim editor"; width: parent.width }
+
+            Repeater {
+              model: [
+                { scope: "vim", action: "undo", label: "Undo" },
+                { scope: "vim", action: "redo", label: "Redo" }
+              ]
+              KeycapRow {
+                required property var modelData
+                width: parent.width
+                label: modelData.label
+                comboString: win.comboFor(modelData.scope, modelData.action)
+                recording: win.recordingScope === modelData.scope && win.recordingAction === modelData.action
+                conflicted: win.isConflicted(modelData.scope, modelData.action)
+                onEdit: {
+                  win.recordingScope = modelData.scope
+                  win.recordingAction = modelData.action
+                  settingsKeys.forceActiveFocus()
+                }
+                onClear: win.recordBinding(modelData.scope, modelData.action, "")
+              }
+            }
+          }
+
+          // ── EDITOR ──────────────────────────────────────────────────────
+          Column {
+            visible: win.searchQuery
+              ? SettingsStore.matchesSettingSearch("Editor Vim Mode jk Exit Cursor Style Font Size", "Vim", win.searchQuery)
+              : win.activeCategory === "editor"
+            width: parent.width
+            spacing: 0
+
+            Item {
+              width: parent.width
+              height: Style.space(36)
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Editor"
+                color: Commons.Color.menu.selectedText
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.heading
+                font.weight: Font.DemiBold
+              }
+            }
+
+            SettingsSection { title: "Editing mode"; width: parent.width }
+
+            SettingsRow {
+              width: parent.width
+              label: "Vim mode"
+              description: "Modal editing with Normal, Insert, and Visual modes."
+              SSwitch {
+                checked: win.settings.editor.vimMode
+                onToggled: win.mutateSetting(function(s) { s.editor.vimMode = !s.editor.vimMode })
+              }
+            }
+
+            SettingsRow {
+              width: parent.width
+              label: "jk exit Insert"
+              description: "Press j then k quickly to exit Insert mode."
+              disabled: !win.settings.editor.vimMode
+              SSwitch {
+                checked: win.settings.editor.jkExit
+                onToggled: win.mutateSetting(function(s) { s.editor.jkExit = !s.editor.jkExit })
+              }
+            }
+
+            SettingsSection { title: "Cursor"; width: parent.width }
+
+            SettingsRow {
+              width: parent.width
+              label: "Cursor style"
+              description: "Auto picks line in Insert mode and block in Normal mode."
+              SSegment {
+                model: [
+                  { val: "auto",  label: "Auto" },
+                  { val: "line",  label: "Line" },
+                  { val: "block", label: "Block" }
+                ]
+                currentValue: win.settings.editor.cursorStyle
+                onSelected: function(v) { win.mutateSetting(function(s) { s.editor.cursorStyle = v }) }
+              }
+            }
+
+            SettingsSection { title: "Typography"; width: parent.width }
+
+            SettingsRow {
+              width: parent.width
+              label: "Editor font size"
+              SSegment {
+                model: [
+                  { val: 12, label: "12px" },
+                  { val: 14, label: "14px" },
+                  { val: 16, label: "16px" },
+                  { val: 18, label: "18px" }
+                ]
+                currentValue: win.settings.editor.fontSize
+                onSelected: function(v) { win.mutateSetting(function(s) { s.editor.fontSize = v }) }
+              }
+            }
+          }
+
+          // ── NAVIGATION ──────────────────────────────────────────────────
+          Column {
+            visible: win.searchQuery
+              ? SettingsStore.matchesSettingSearch("Navigation Wrap Selection", "Panels", win.searchQuery)
+              : win.activeCategory === "navigation"
+            width: parent.width
+            spacing: 0
+
+            Item {
+              width: parent.width
+              height: Style.space(36)
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Navigation"
+                color: Commons.Color.menu.selectedText
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.heading
+                font.weight: Font.DemiBold
+              }
+            }
+
+            SettingsSection { title: "List behavior"; width: parent.width }
+
+            SettingsRow {
+              width: parent.width
+              label: "Wrap selection"
+              description: "Moving past the last entry wraps back to the first, and vice versa."
+              SSwitch {
+                checked: win.settings.navigation.wrapSelection
+                onToggled: win.mutateSetting(function(s) { s.navigation.wrapSelection = !s.navigation.wrapSelection })
+              }
+            }
+          }
+
+          // ── CLIPBOARD & RETENTION ───────────────────────────────────────
+          Column {
+            visible: win.searchQuery
+              ? SettingsStore.matchesSettingSearch("Clipboard History Limit Retention Cleanup Age", "Retention", win.searchQuery)
+              : win.activeCategory === "clipboard"
+            width: parent.width
+            spacing: 0
+
+            Item {
+              width: parent.width
+              height: Style.space(36)
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Clipboard & Retention"
+                color: Commons.Color.menu.selectedText
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.heading
+                font.weight: Font.DemiBold
+              }
+            }
+
+            SettingsSection { title: "History capacity"; width: parent.width }
+
+            SettingsRow {
+              width: parent.width
+              label: "Maximum entries"
+              description: "Pinned entries are not counted towards this limit."
+              SDropdown {
+                width: Style.space(130)
+                model: [
+                  { val: 100,  label: "100 entries" },
+                  { val: 250,  label: "250 entries" },
+                  { val: 500,  label: "500 entries" },
+                  { val: 1000, label: "1000 entries" },
+                  { val: -1,   label: "Unlimited" }
+                ]
+                currentValue: win.settings.clipboard.historyLimit
+                onSelected: function(v) { win.mutateSetting(function(s) { s.clipboard.historyLimit = v }) }
+              }
+            }
+
+            SettingsSection { title: "Automatic cleanup"; width: parent.width }
+
+            SettingsRow {
+              width: parent.width
+              label: "Remove entries older than"
+              description: "Pinned entries are always protected from automatic cleanup."
+              SDropdown {
+                width: Style.space(130)
+                model: [
+                  { val: 0,    label: "Never" },
+                  { val: 24,   label: "24 hours" },
+                  { val: 168,  label: "7 days" },
+                  { val: 720,  label: "30 days" },
+                  { val: 2160, label: "90 days" }
+                ]
+                currentValue: win.settings.clipboard.autoCleanupHours
+                onSelected: function(v) { win.mutateSetting(function(s) { s.clipboard.autoCleanupHours = v }) }
+              }
+            }
+
+            SettingsSection { title: "Manual cleanup"; width: parent.width }
+
+            WarningBanner {
+              width: parent.width
+              message: "These actions permanently remove clipboard history. Pinned entries are not affected."
+            }
+
+            Item { width: 1; height: Style.space(8) }
+
+            // Cleanup action buttons — text-style destructive buttons
+            Flow {
+              width: parent.width
+              spacing: Style.space(8)
+
+              Repeater {
+                model: [
+                  { hrs: 24,  label: "Remove older than 24h" },
+                  { hrs: 168, label: "Remove older than 7d" },
+                  { hrs: 720, label: "Remove older than 30d" }
+                ]
+                Rectangle {
+                  required property var modelData
+                  height: Style.space(32)
+                  width: mcBtnText.implicitWidth + Style.space(16)
+                  radius: Math.max(4, Style.space(5))
+                  color: mcBtnMouse.containsMouse ? Util.alpha(Commons.Color.urgent, 0.18) : Util.alpha(Commons.Color.urgent, 0.08)
+                  border.width: 1
+                  border.color: Util.alpha(Commons.Color.urgent, mcBtnMouse.containsMouse ? 0.5 : 0.25)
+
+                  Text {
+                    id: mcBtnText
+                    anchors.centerIn: parent
+                    text: modelData.label
+                    color: Commons.Color.urgent
+                    font.family: Style.font.menuFamily
+                    font.pixelSize: Style.font.bodySmall
+                  }
+
+                  MouseArea {
+                    id: mcBtnMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: win.manualCleanup(modelData.hrs)
+                  }
+                }
+              }
+
+              Rectangle {
+                height: Style.space(32)
+                width: gcBtnText.implicitWidth + Style.space(16)
+                radius: Math.max(4, Style.space(5))
+                color: gcBtnMouse.containsMouse ? Util.alpha(Commons.Color.urgent, 0.18) : Util.alpha(Commons.Color.urgent, 0.08)
+                border.width: 1
+                border.color: Util.alpha(Commons.Color.urgent, gcBtnMouse.containsMouse ? 0.5 : 0.25)
 
                 Text {
-                  anchors.verticalCenter: parent.verticalCenter
-                  width: parent.width - Style.space(210)
-                  textFormat: Text.PlainText
-                  text: modelData.label
-                  color: Commons.Color.menu.text
+                  id: gcBtnText
+                  anchors.centerIn: parent
+                  text: "Clean orphan images"
+                  color: Commons.Color.urgent
                   font.family: Style.font.menuFamily
-                  font.pixelSize: Style.font.title
-                  elide: Text.ElideRight
+                  font.pixelSize: Style.font.bodySmall
                 }
 
-                Rectangle {
-                  readonly property bool recording: win.recordingScope === modelData.scope && win.recordingAction === modelData.action
-                  width: Style.space(135)
-                  height: Style.space(32)
-                  radius: Style.cornerRadius
-                  color: recording ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-
-                  Text {
-                    anchors.centerIn: parent
-                    textFormat: Text.PlainText
-                    text: parent.recording
-                      ? "Press keys…"
-                      : ((win.keybindings[modelData.scope] && win.keybindings[modelData.scope][modelData.action]) || "Unbound")
-                    color: parent.recording ? Commons.Color.menu.selectedText : Commons.Color.menu.text
-                    font.family: Style.font.menuFamily
-                    font.pixelSize: Style.font.subtitle
-                  }
-
-                  MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                      win.recordingScope = modelData.scope
-                      win.recordingAction = modelData.action
-                      settingsKeys.forceActiveFocus()
-                    }
-                  }
-                }
-
-                Rectangle {
-                  width: Style.space(56)
-                  height: Style.space(32)
-                  radius: Style.cornerRadius
-                  color: Util.alpha(Commons.Color.menu.text, 0.06)
-
-                  Text {
-                    anchors.centerIn: parent
-                    textFormat: Text.PlainText
-                    text: "Clear"
-                    color: Commons.Color.menu.text
-                    opacity: 0.72
-                    font.family: Style.font.menuFamily
-                    font.pixelSize: Style.font.subtitle
-                  }
-
-                  MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: win.recordBinding(modelData.scope, modelData.action, "")
-                  }
+                MouseArea {
+                  id: gcBtnMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: win.cleanupOrphanImages()
                 }
               }
             }
           }
 
-          // EDITOR
+          // ── OCR ─────────────────────────────────────────────────────────
           Column {
-            visible: win.searchQuery ? SettingsStore.matchesSettingSearch("Editor Vim Mode jk Exit", "Vim", win.searchQuery) : win.activeCategory === "editor"
+            visible: win.searchQuery
+              ? SettingsStore.matchesSettingSearch("OCR Language English Amharic Tesseract Screen Extraction", "OCR", win.searchQuery)
+              : win.activeCategory === "ocr"
             width: parent.width
-            spacing: Style.space(10)
+            spacing: 0
 
-            Text { text: "Editor"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading; font.weight: Font.DemiBold }
-
-            Rectangle {
-              width: vimLbl.implicitWidth + Style.space(20); height: Style.space(34); radius: Style.cornerRadius
-              color: win.settings.editor.vimMode ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-              Text { id: vimLbl; anchors.centerIn: parent; text: "Vim Mode: " + (win.settings.editor.vimMode ? "Enabled" : "Disabled"); color: win.settings.editor.vimMode ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
-              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.editor.vimMode = !s.editor.vimMode }) }
-            }
-
-            Rectangle {
-              width: jkLbl.implicitWidth + Style.space(20); height: Style.space(34); radius: Style.cornerRadius
-              color: win.settings.editor.jkExit ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-              Text { id: jkLbl; anchors.centerIn: parent; text: "Vim 'jk' Insert Exit: " + (win.settings.editor.jkExit ? "Enabled" : "Disabled"); color: win.settings.editor.jkExit ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
-              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.editor.jkExit = !s.editor.jkExit }) }
-            }
-
-            Row {
-              spacing: Style.space(8)
-              Text { anchors.verticalCenter: parent.verticalCenter; text: "Cursor Style:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
-              Repeater {
-                model: ["auto", "line", "block"]
-                Rectangle {
-                  required property string modelData
-                  readonly property bool on: win.settings.editor.cursorStyle === modelData
-                  width: csLbl.implicitWidth + Style.space(16); height: Style.space(34); radius: Style.cornerRadius
-                  color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: csLbl; anchors.centerIn: parent; text: modelData; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title }
-                  MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.editor.cursorStyle = modelData }) }
-                }
+            Item {
+              width: parent.width
+              height: Style.space(36)
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "OCR"
+                color: Commons.Color.menu.selectedText
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.heading
+                font.weight: Font.DemiBold
               }
             }
 
-            Row {
-              spacing: Style.space(8)
-              Text { anchors.verticalCenter: parent.verticalCenter; text: "Editor Font Size:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
-              Repeater {
-                model: [12, 14, 16, 18]
-                Rectangle {
-                  required property int modelData
-                  readonly property bool on: win.settings.editor.fontSize === modelData
-                  width: fsLbl.implicitWidth + Style.space(16); height: Style.space(34); radius: Style.cornerRadius
-                  color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: fsLbl; anchors.centerIn: parent; text: modelData + "px"; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title }
-                  MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.editor.fontSize = modelData }) }
-                }
+            SettingsSection { title: "Feature"; width: parent.width }
+
+            SettingsRow {
+              width: parent.width
+              label: "Screen text extraction"
+              description: "Select a screen region and extract text using Tesseract OCR."
+              SSwitch {
+                checked: win.settings.ocr.enabled
+                onToggled: win.mutateSetting(function(s) { s.ocr.enabled = !s.ocr.enabled })
               }
             }
-          }
 
-          // NAVIGATION
-          Column {
-            visible: win.searchQuery ? SettingsStore.matchesSettingSearch("Navigation Wrap Selection", "Panels", win.searchQuery) : win.activeCategory === "navigation"
-            width: parent.width
-            spacing: Style.space(10)
+            SettingsSection { title: "Language"; width: parent.width }
 
-            Text { text: "Navigation"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading; font.weight: Font.DemiBold }
-
-            Rectangle {
-              width: wrapLbl.implicitWidth + Style.space(20); height: Style.space(34); radius: Style.cornerRadius
-              color: win.settings.navigation.wrapSelection ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-              Text { id: wrapLbl; anchors.centerIn: parent; text: "Wrap List Selection: " + (win.settings.navigation.wrapSelection ? "On" : "Off"); color: win.settings.navigation.wrapSelection ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
-              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.navigation.wrapSelection = !s.navigation.wrapSelection }) }
-            }
-          }
-
-          // CLIPBOARD RETENTION
-          Column {
-            visible: win.searchQuery ? SettingsStore.matchesSettingSearch("Clipboard History Limit Retention Cleanup", "Retention", win.searchQuery) : win.activeCategory === "clipboard"
-            width: parent.width
-            spacing: Style.space(10)
-
-            Text { text: "Clipboard & Retention"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading; font.weight: Font.DemiBold }
-
-            Text { text: "Maximum History Size (pinned entries excluded):"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
-            Row {
-              spacing: Style.space(6)
-              Repeater {
+            SettingsRow {
+              width: parent.width
+              label: "Recognition language"
+              description: "The Tesseract language pack used for extraction."
+              disabled: !win.settings.ocr.enabled
+              SSegment {
                 model: [
-                  { val: 100, label: "100" },
-                  { val: 250, label: "250" },
-                  { val: 500, label: "500" },
-                  { val: 1000, label: "1000" },
-                  { val: -1, label: "Unlimited" }
-                ]
-                Rectangle {
-                  required property var modelData
-                  readonly property bool on: win.settings.clipboard.historyLimit === modelData.val
-                  width: limLbl.implicitWidth + Style.space(14); height: Style.space(34); radius: Style.cornerRadius
-                  color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: limLbl; anchors.centerIn: parent; text: modelData.label; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.subtitle }
-                  MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.clipboard.historyLimit = modelData.val }) }
-                }
-              }
-            }
-
-            Text { text: "Automatic Age Cleanup (pinned entries protected):"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
-            Row {
-              spacing: Style.space(6)
-              Repeater {
-                model: [
-                  { val: 0, label: "Never" },
-                  { val: 24, label: "24h" },
-                  { val: 168, label: "7d" },
-                  { val: 720, label: "30d" },
-                  { val: 2160, label: "90d" }
-                ]
-                Rectangle {
-                  required property var modelData
-                  readonly property bool on: win.settings.clipboard.autoCleanupHours === modelData.val
-                  width: ageLbl.implicitWidth + Style.space(14); height: Style.space(34); radius: Style.cornerRadius
-                  color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: ageLbl; anchors.centerIn: parent; text: modelData.label; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.subtitle }
-                  MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.clipboard.autoCleanupHours = modelData.val }) }
-                }
-              }
-            }
-
-            Text { text: "Manual Cleanup:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
-            Row {
-              spacing: Style.space(6)
-              Repeater {
-                model: [
-                  { hrs: 24, label: "Older than 24h" },
-                  { hrs: 168, label: "Older than 7d" },
-                  { hrs: 720, label: "Older than 30d" }
-                ]
-                Rectangle {
-                  required property var modelData
-                  width: mcLbl.implicitWidth + Style.space(14); height: Style.space(34); radius: Style.cornerRadius
-                  color: Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: mcLbl; anchors.centerIn: parent; text: modelData.label; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.subtitle }
-                  MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.manualCleanup(modelData.hrs) }
-                }
-              }
-              Rectangle {
-                width: gcLbl.implicitWidth + Style.space(14); height: Style.space(34); radius: Style.cornerRadius
-                color: Util.alpha(Commons.Color.menu.text, 0.08)
-                Text { id: gcLbl; anchors.centerIn: parent; text: "Clean Orphan Images"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.subtitle }
-                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.cleanupOrphanImages() }
-              }
-            }
-          }
-
-          // OCR
-          Column {
-            visible: win.searchQuery ? SettingsStore.matchesSettingSearch("OCR Language English Amharic Tesseract", "OCR", win.searchQuery) : win.activeCategory === "ocr"
-            width: parent.width
-            spacing: Style.space(10)
-
-            Text { text: "OCR (Screen Text Extraction)"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading; font.weight: Font.DemiBold }
-
-            Rectangle {
-              width: ocrEnLbl.implicitWidth + Style.space(20); height: Style.space(34); radius: Style.cornerRadius
-              color: win.settings.ocr.enabled ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-              Text { id: ocrEnLbl; anchors.centerIn: parent; text: "OCR: " + (win.settings.ocr.enabled ? "Enabled" : "Disabled"); color: win.settings.ocr.enabled ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
-              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.ocr.enabled = !s.ocr.enabled }) }
-            }
-
-            Row {
-              spacing: Style.space(6)
-              Repeater {
-                model: [
-                  { val: "eng", label: "English (eng)" },
-                  { val: "amh", label: "Amharic (amh)" },
+                  { val: "eng",     label: "English" },
+                  { val: "amh",     label: "Amharic" },
                   { val: "eng+amh", label: "English + Amharic" }
                 ]
-                Rectangle {
-                  required property var modelData
-                  readonly property bool on: win.settings.ocr.languages === modelData.val
-                  width: olLbl.implicitWidth + Style.space(14); height: Style.space(34); radius: Style.cornerRadius
-                  color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: olLbl; anchors.centerIn: parent; text: modelData.label; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.subtitle }
-                  MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.ocr.languages = modelData.val }) }
+                currentValue: win.settings.ocr.languages
+                onSelected: function(v) { win.mutateSetting(function(s) { s.ocr.languages = v }) }
+              }
+            }
+
+            // Status list
+            Item { width: 1; height: Style.space(8) }
+
+            Repeater {
+              model: [
+                { code: "eng", label: "English (eng)" },
+                { code: "amh", label: "Amharic (amh)" }
+              ]
+              Item {
+                required property var modelData
+                width: parent.width
+                height: Style.space(28)
+
+                Row {
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(8)
+
+                  Text {
+                    text: win.hasLang(modelData.code) ? "✓" : "✗"
+                    color: win.hasLang(modelData.code) ? Commons.Color.accent : Commons.Color.urgent
+                    font.family: Style.font.menuFamily
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+
+                  Text {
+                    text: modelData.label
+                    color: Commons.Color.menu.text
+                    opacity: win.hasLang(modelData.code) ? 0.85 : 0.6
+                    font.family: Style.font.menuFamily
+                    font.pixelSize: Style.font.bodySmall
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
                 }
               }
             }
+
+            WarningBanner {
+              visible: !win.hasLang("amh") && win.settings.ocr.languages.indexOf("amh") >= 0
+              width: parent.width
+              message: "Amharic language pack is not installed. Run: sudo dnf install tesseract-langpack-amh"
+            }
+
+            Item { width: 1; height: Style.space(4) }
 
             Text {
-              textFormat: Text.PlainText
-              text: "Installed Tesseract languages: " + (win.installedOcrLangs.length > 0 ? win.installedOcrLangs.join(", ") : "none detected")
-                + (!win.hasLang("amh") ? "\nMissing Amharic pack: install 'tesseract-langpack-amh' on Fedora." : "")
-              color: !win.hasLang("amh") && win.settings.ocr.languages.indexOf("amh") >= 0 ? Commons.Color.warning : Commons.Color.menu.text
-              opacity: 0.78
+              text: "Installed packs: " + (win.installedOcrLangs.length > 0 ? win.installedOcrLangs.join(", ") : "none detected")
+              color: Util.alpha(Commons.Color.menu.text, 0.5)
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.subtitle
-              wrapMode: Text.WordWrap
-              width: parent.width
+              font.pixelSize: Style.font.caption
             }
           }
 
-          // APPEARANCE
+          // ── APPEARANCE ──────────────────────────────────────────────────
           Column {
-            visible: win.searchQuery ? SettingsStore.matchesSettingSearch("Appearance Opacity Transparency", "Theme", win.searchQuery) : win.activeCategory === "appearance"
+            visible: win.searchQuery
+              ? SettingsStore.matchesSettingSearch("Appearance Opacity Transparency Corner Radius", "Theme", win.searchQuery)
+              : win.activeCategory === "appearance"
             width: parent.width
-            spacing: Style.space(10)
+            spacing: 0
 
-            Text { text: "Appearance"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading; font.weight: Font.DemiBold }
-
-            Text { text: "Overlay Background Opacity:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
-            Row {
-              spacing: Style.space(6)
-              Repeater {
-                model: [0.75, 0.85, 0.94, 1.0]
-                Rectangle {
-                  required property real modelData
-                  readonly property bool on: Math.abs(win.settings.appearance.backgroundOpacity - modelData) < 0.01
-                  width: opLbl.implicitWidth + Style.space(16); height: Style.space(34); radius: Style.cornerRadius
-                  color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: opLbl; anchors.centerIn: parent; text: Math.round(modelData * 100) + "%"; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title }
-                  MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.appearance.backgroundOpacity = modelData }) }
-                }
+            Item {
+              width: parent.width
+              height: Style.space(36)
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Appearance"
+                color: Commons.Color.menu.selectedText
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.heading
+                font.weight: Font.DemiBold
               }
             }
 
-            Text { text: "Corner Radius:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
-            Row {
-              spacing: Style.space(6)
-              Repeater {
-                model: [0, 8, 12, 16]
-                Rectangle {
-                  required property int modelData
-                  readonly property bool on: win.settings.appearance.cornerRadius === modelData
-                  width: crLbl.implicitWidth + Style.space(16); height: Style.space(34); radius: Style.cornerRadius
-                  color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: crLbl; anchors.centerIn: parent; text: modelData + "px"; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title }
-                  MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.appearance.cornerRadius = modelData }) }
-                }
+            SettingsSection { title: "Transparency"; width: parent.width }
+
+            SettingsRow {
+              width: parent.width
+              label: "Background opacity"
+              description: "Controls how transparent the clipboard overlay is."
+              SSlider {
+                width: Style.space(180)
+                min: 0.5
+                max: 1.0
+                step: 0.05
+                value: win.settings.appearance.backgroundOpacity
+                formatValue: function(v) { return Math.round(v * 100) + "%" }
+                onMoved: function(v) { win.mutateSetting(function(s) { s.appearance.backgroundOpacity = v }) }
+              }
+            }
+
+            SettingsSection { title: "Shape"; width: parent.width }
+
+            SettingsRow {
+              width: parent.width
+              label: "Corner radius"
+              description: "Controls the roundness of the overlay and its UI elements."
+              SSegment {
+                model: [
+                  { val: 0,  label: "None" },
+                  { val: 8,  label: "Small" },
+                  { val: 12, label: "Medium" },
+                  { val: 16, label: "Large" }
+                ]
+                currentValue: win.settings.appearance.cornerRadius
+                onSelected: function(v) { win.mutateSetting(function(s) { s.appearance.cornerRadius = v }) }
               }
             }
           }
+
+          // Footer spacer
+          Item { width: 1; height: Style.space(8) }
         }
       }
     }

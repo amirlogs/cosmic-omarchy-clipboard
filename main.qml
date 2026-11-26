@@ -59,5 +59,17 @@ Scope {
       clipboard.openAdvancedSettings()
       return "settings"
     }
+
+    function openQuickSettings(): string {
+      clipboard.open("{}")
+      clipboard.quickSettingsOpen = true
+      return "quickSettings"
+    }
+
+    function openSettingsCategory(cat: string): string {
+      clipboard.openAdvancedSettings()
+      clipboard.settingsWindowItem.activeCategory = cat
+      return cat
+    }
   }
 }

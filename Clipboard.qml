@@ -1054,6 +1054,8 @@ Item {
     command: [root.shortcutsSyncScript]
   }
 
+  property alias settingsWindowItem: settingsWindow
+
   SettingsWindow {
     id: settingsWindow
     settings: root.settings
@@ -1383,18 +1385,41 @@ Item {
 
           Row {
             anchors.fill: parent
-            spacing: Style.space(12)
+            spacing: Style.space(8)
 
-            Text {
-              textFormat: Text.PlainText
+            // App wordmark / search area (left)
+            Item {
               width: parent.width - tabBar.width - parent.spacing
-              anchors.verticalCenter: parent.verticalCenter
-              text: root.filterText || Commons.I18n.t("clipboard.search")
-              color: root.foreground
-              opacity: root.filterText ? 1 : 0.58
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.heading
-              elide: Text.ElideRight
+              height: parent.height
+
+              // Show wordmark when no filter
+              Text {
+                visible: !root.filterText
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                textFormat: Text.PlainText
+                text: "Clipboard"
+                color: root.selectedText
+                opacity: 0.72
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+                font.weight: Font.DemiBold
+              }
+
+              // Show search text when filtering
+              Text {
+                visible: !!root.filterText
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                textFormat: Text.PlainText
+                width: parent.width
+                text: root.filterText
+                color: root.selectedText
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+              }
             }
 
             Row {
@@ -1409,27 +1434,62 @@ Item {
                   { key: "pinned", label: Commons.I18n.t("clipboard.pinned", "Pinned"), count: root.pinnedCount }
                 ]
 
-                Rectangle {
+                Item {
                   required property var modelData
                   readonly property bool active: root.activeTab === modelData.key
 
-                  width: tabLabel.implicitWidth + Style.space(18)
-                  height: Math.max(Style.space(28), root.headerHeight - Style.space(4))
-                  radius: root.cornerRadius
-                  color: active ? root.selectedBackground : "transparent"
-                  border.width: active ? Style.normalBorderWidth : 0
-                  border.color: active ? Util.alpha(root.border, 0.35) : "transparent"
+                  width: tabContentRow.implicitWidth + Style.space(14)
+                  height: Math.max(Style.space(28), root.headerHeight - Style.space(2))
 
-                  Text {
-                    id: tabLabel
+                  Row {
+                    id: tabContentRow
                     anchors.centerIn: parent
-                    textFormat: Text.PlainText
-                    text: modelData.count > 0 ? (modelData.label + " (" + modelData.count + ")") : modelData.label
-                    color: active ? root.selectedText : root.foreground
-                    opacity: active ? 1.0 : 0.65
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.body
-                    font.weight: active ? Font.DemiBold : Font.Normal
+                    spacing: Style.space(5)
+
+                    Text {
+                      id: tabLabelInner
+                      anchors.verticalCenter: parent.verticalCenter
+                      textFormat: Text.PlainText
+                      text: modelData.label
+                      color: active ? root.selectedText : root.foreground
+                      opacity: active ? 1.0 : 0.55
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.body
+                      font.weight: active ? Font.DemiBold : Font.Normal
+                    }
+
+                    // Count badge
+                    Rectangle {
+                      visible: modelData.count > 0
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: countBadgeText.implicitWidth + Style.space(8)
+                      height: Style.space(16)
+                      radius: Style.space(8)
+                      color: active ? Util.alpha(root.selectedText, 0.18) : Util.alpha(root.foreground, 0.08)
+
+                      Text {
+                        id: countBadgeText
+                        anchors.centerIn: parent
+                        text: String(modelData.count)
+                        color: active ? root.selectedText : Util.alpha(root.foreground, 0.55)
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.caption
+                        font.weight: Font.DemiBold
+                      }
+                    }
+                  }
+
+                  // Active underline indicator
+                  Rectangle {
+                    visible: active
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: Style.space(4)
+                    anchors.rightMargin: Style.space(4)
+                    anchors.bottom: parent.bottom
+                    height: Style.space(2)
+                    radius: Style.space(1)
+                    color: root.selectedText
                   }
 
                   MouseArea {
@@ -1628,7 +1688,21 @@ Item {
                   width: ListView.view.width
                   height: root.rowHeight
                   radius: root.cornerRadius
-                  color: hasCursor ? root.selectedBackground : "transparent"
+                  color: hasCursor ? Util.alpha(root.foreground, 0.1) : (rowMouse.containsMouse ? Util.alpha(root.foreground, 0.05) : "transparent")
+
+                  // Left accent bar when selected
+                  Rectangle {
+                    visible: row.hasCursor
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.topMargin: Style.space(4)
+                    anchors.bottomMargin: Style.space(4)
+                    anchors.leftMargin: 0
+                    width: Style.space(2)
+                    radius: Style.space(1)
+                    color: root.selectedText
+                  }
 
                   MouseArea {
                     id: rowMouse
@@ -1647,10 +1721,10 @@ Item {
 
                   Row {
                     anchors.fill: parent
-                    anchors.leftMargin: Style.space(12)
+                    anchors.leftMargin: Style.space(14)
                     anchors.rightMargin: Style.space(10)
-                    anchors.topMargin: Style.space(8)
-                    anchors.bottomMargin: Style.space(8)
+                    anchors.topMargin: Style.space(6)
+                    anchors.bottomMargin: Style.space(6)
                     spacing: Style.space(10)
 
                     SizedImage {
@@ -1662,20 +1736,70 @@ Item {
                       smooth: true
                     }
 
-                    Text {
-                      textFormat: root.filterText ? Text.StyledText : Text.PlainText
+                    // Content column: main text + type/metadata row
+                    Column {
                       width: parent.width - (row.previewImage.length > 0 ? parent.height + parent.spacing : 0) - (rowActions.visible ? rowActions.width + parent.spacing : 0)
-                      height: parent.height
-                      text: root.filterText
-                        ? ClipboardHistory.highlightText(row.previewText, root.filterText, root.selectedText)
-                        : row.previewText
-                      color: row.hasCursor ? root.selectedText : root.foreground
-                      font.family: root.fontFamily
-                      font.pixelSize: Style.font.title
-                      opacity: row.entryType === "image" || row.entryType === "file" ? 0.72 : 1.0
-                      elide: Text.ElideRight
-                      wrapMode: Text.NoWrap
-                      verticalAlignment: Text.AlignVCenter
+                      anchors.verticalCenter: parent.verticalCenter
+                      spacing: Style.space(2)
+
+                      Text {
+                        textFormat: root.filterText ? Text.StyledText : Text.PlainText
+                        width: parent.width
+                        text: root.filterText
+                          ? ClipboardHistory.highlightText(row.previewText, root.filterText, root.selectedText)
+                          : row.previewText
+                        color: row.hasCursor ? root.selectedText : root.foreground
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.body
+                        opacity: row.entryType === "image" || row.entryType === "file" ? 0.72 : 1.0
+                        elide: Text.ElideRight
+                        wrapMode: Text.NoWrap
+                      }
+
+                      // Type badge row (shown when pinned or non-text)
+                      Row {
+                        id: typeRow
+                        visible: row.pinned || row.entryType !== "text"
+                        spacing: Style.space(4)
+                        height: Style.space(14)
+
+                        // Type badge
+                        Rectangle {
+                          height: Style.space(14)
+                          width: typeBadgeText.implicitWidth + Style.space(6)
+                          radius: Style.space(3)
+                          color: Util.alpha(root.foreground, 0.1)
+                          anchors.verticalCenter: parent.verticalCenter
+
+                          Text {
+                            id: typeBadgeText
+                            anchors.centerIn: parent
+                            text: row.entryType
+                            color: Util.alpha(row.hasCursor ? root.selectedText : root.foreground, 0.65)
+                            font.family: root.fontFamily
+                            font.pixelSize: Style.font.caption
+                          }
+                        }
+
+                        // Pin indicator
+                        Rectangle {
+                          visible: row.pinned
+                          height: Style.space(14)
+                          width: pinnedBadgeText.implicitWidth + Style.space(6)
+                          radius: Style.space(3)
+                          color: Util.alpha(root.selectedText, 0.15)
+                          anchors.verticalCenter: parent.verticalCenter
+
+                          Text {
+                            id: pinnedBadgeText
+                            anchors.centerIn: parent
+                            text: "pinned"
+                            color: Util.alpha(root.selectedText, 0.75)
+                            font.family: root.fontFamily
+                            font.pixelSize: Style.font.caption
+                          }
+                        }
+                      }
                     }
 
                     Row {
@@ -1686,8 +1810,8 @@ Item {
 
                       Rectangle {
                         id: pinActionBtn
-                        width: Style.space(30)
-                        height: Style.space(30)
+                        width: Style.space(28)
+                        height: Style.space(28)
                         radius: Math.max(4, root.cornerRadius - 4)
                         color: pinActionMouse.containsMouse ? Util.alpha(root.foreground, 0.14) : "transparent"
 
@@ -1697,7 +1821,7 @@ Item {
                           color: row.pinned ? root.selectedText : root.foreground
                           opacity: row.pinned ? 1.0 : 0.78
                           font.family: root.fontFamily
-                          font.pixelSize: Style.space(17)
+                          font.pixelSize: Style.space(16)
                         }
 
                         MouseArea {
@@ -1720,8 +1844,8 @@ Item {
                       Rectangle {
                         id: deleteActionBtn
                         visible: row.hasCursor || rowMouse.containsMouse
-                        width: Style.space(30)
-                        height: Style.space(30)
+                        width: Style.space(28)
+                        height: Style.space(28)
                         radius: Math.max(4, root.cornerRadius - 4)
                         color: deleteActionMouse.containsMouse ? Util.alpha(root.foreground, 0.14) : "transparent"
 
@@ -1729,9 +1853,9 @@ Item {
                           anchors.centerIn: parent
                           text: "󰆴"
                           color: root.foreground
-                          opacity: 0.78
+                          opacity: 0.72
                           font.family: root.fontFamily
-                          font.pixelSize: Style.space(17)
+                          font.pixelSize: Style.space(16)
                         }
 
                         MouseArea {
@@ -1951,49 +2075,80 @@ Item {
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 anchors.leftMargin: root.contentMargin
-                height: visible ? Style.space(22) : 0
+                height: visible ? Style.space(26) : 0
                 color: "transparent"
 
                 Row {
                   anchors.fill: parent
-                  spacing: Style.space(10)
+                  spacing: Style.space(8)
 
-                  Text {
+                  // Mode chip — colored badge
+                  Rectangle {
+                    id: modeChip
                     anchors.verticalCenter: parent.verticalCenter
-                    textFormat: Text.PlainText
-                    text: {
+                    height: Style.space(18)
+                    width: modeChipText.implicitWidth + Style.space(10)
+                    radius: Style.space(3)
+
+                    readonly property string modeId: {
                       var _rev = root.editorRevision
-                      if (!previewPanel.panelFocused) return "PREVIEW"
-                      if (!root.vimMode) return "EDIT"
+                      if (!previewPanel.panelFocused) return "preview"
+                      if (!root.vimMode) return "edit"
                       var m = root.vimState ? root.vimState.mode : "normal"
-                      if (m === "insert") return "VIM · INSERT"
-                      if (m === "visual") return "VIM · VISUAL"
-                      if (m === "visual_line") return "VIM · V-LINE"
-                      if (m === "visual_block") return "VIM · V-BLOCK"
-                      if (m === "search") return "VIM · /" + (root.vimState ? root.vimState.searchBuffer : "")
-                      return "VIM · NORMAL"
+                      if (m === "insert") return "insert"
+                      if (m === "visual" || m === "visual_line" || m === "visual_block") return "visual"
+                      if (m === "search") return "search"
+                      return "normal"
                     }
-                    color: previewPanel.panelFocused ? root.selectedText : root.foreground
-                    opacity: previewPanel.panelFocused ? 1.0 : 0.55
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
-                    font.weight: Font.DemiBold
+
+                    color: {
+                      if (modeId === "preview") return Util.alpha(root.foreground, 0.08)
+                      if (modeId === "insert")  return Util.alpha(root.selectedText, 0.2)
+                      if (modeId === "visual")  return Util.alpha(root.selectedText, 0.15)
+                      if (modeId === "search")  return Util.alpha(root.selectedText, 0.12)
+                      if (modeId === "edit")    return Util.alpha(root.selectedText, 0.15)
+                      return Util.alpha(root.foreground, 0.1)
+                    }
+
+                    Text {
+                      id: modeChipText
+                      anchors.centerIn: parent
+                      textFormat: Text.PlainText
+                      text: {
+                        var _rev = root.editorRevision
+                        var id = modeChip.modeId
+                        if (id === "preview") return "PREVIEW"
+                        if (id === "insert")  return "INSERT"
+                        if (id === "visual")  return "VISUAL"
+                        if (id === "search")  return "/ " + (root.vimState ? root.vimState.searchBuffer : "")
+                        if (id === "edit")    return "EDIT"
+                        return "NORMAL"
+                      }
+                      color: {
+                        var id = modeChip.modeId
+                        if (id === "preview") return Util.alpha(root.foreground, 0.55)
+                        return root.selectedText
+                      }
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                      font.weight: Font.DemiBold
+                    }
                   }
 
+                  // Vim toggle button
                   Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     width: vimToggleText.implicitWidth + Style.space(10)
                     height: Style.space(18)
-                    radius: Style.space(4)
-                    color: root.vimMode ? root.selectedBackground : Util.alpha(root.foreground, 0.08)
+                    radius: Style.space(3)
+                    color: root.vimMode ? Util.alpha(root.selectedText, 0.12) : Util.alpha(root.foreground, 0.07)
 
                     Text {
                       id: vimToggleText
                       anchors.centerIn: parent
                       textFormat: Text.PlainText
-                      text: root.vimMode ? "Vim: ON" : "Vim: OFF"
-                      color: root.vimMode ? root.selectedText : root.foreground
-                      opacity: root.vimMode ? 1.0 : 0.65
+                      text: root.vimMode ? "Vim" : "Vim: off"
+                      color: root.vimMode ? root.selectedText : Util.alpha(root.foreground, 0.6)
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
                     }
@@ -2020,8 +2175,7 @@ Item {
                       var lc = EditorEngine.cursorLineCol(st ? st.text : "", st ? st.cursor : 0)
                       return "Ln " + (lc.line + 1) + ", Col " + (lc.col + 1)
                     }
-                    color: root.foreground
-                    opacity: 0.65
+                    color: Util.alpha(root.foreground, 0.75)
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                   }
@@ -2031,12 +2185,12 @@ Item {
                     textFormat: Text.PlainText
                     text: {
                       var _rev = root.editorRevision
-                      return root.editorState && root.editorState.dirty ? "Modified" : ""
+                      return root.editorState && root.editorState.dirty ? "●" : ""
                     }
                     color: root.selectedText
-                    opacity: 0.85
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
+                    font.weight: Font.DemiBold
                   }
                 }
               }
@@ -2310,30 +2464,98 @@ Item {
         anchors.topMargin: root.contentMargin + root.headerHeight + Style.space(6)
         anchors.rightMargin: root.contentMargin
         z: 18
-        width: Style.space(250)
-        height: qsCol.implicitHeight + Style.space(24)
+        width: Style.space(300)
+        height: qsCol.implicitHeight + Style.space(28)
         radius: root.cornerRadius
         color: root.background
         borderSpec: Border.flat(Util.alpha(root.border, 0.45), Style.normalBorderWidth)
-        padding: Style.space(12)
 
         MouseArea { anchors.fill: parent; onClicked: {} }
 
         Column {
           id: qsCol
-          anchors.fill: parent
-          anchors.margins: Style.space(12)
-          spacing: Style.space(8)
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: Style.space(14)
+          spacing: 0
 
-          Text { text: "Quick Settings"; color: root.selectedText; font.family: root.fontFamily; font.pixelSize: Style.font.body; font.weight: Font.DemiBold }
+          // Header row
+          Row {
+            width: parent.width
+            height: Style.space(32)
 
-          Rectangle {
-            width: parent.width; height: Style.space(26); radius: Math.max(4, root.cornerRadius - 4)
-            color: root.vimMode ? root.selectedBackground : Util.alpha(root.foreground, 0.08)
-            Text { anchors.centerIn: parent; text: "Vim Mode: " + (root.vimMode ? "ON" : "OFF"); color: root.vimMode ? root.selectedText : root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-            MouseArea {
-              anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-              onClicked: {
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Quick Settings"
+              color: root.selectedText
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              font.weight: Font.DemiBold
+              width: parent.width - closeQsBtn.width
+            }
+
+            Text {
+              id: closeQsBtn
+              anchors.verticalCenter: parent.verticalCenter
+              text: "✕"
+              color: Util.alpha(root.foreground, 0.5)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.quickSettingsOpen = false
+              }
+            }
+          }
+
+          // Thin divider
+          Rectangle { width: parent.width; height: 1; color: Util.alpha(root.foreground, 0.1) }
+
+          Item { width: 1; height: Style.space(10) }
+
+          // Section: Editor
+          Text {
+            text: "EDITOR"
+            color: Util.alpha(root.selectedText, 0.6)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            font.weight: Font.DemiBold
+            bottomPadding: Style.space(4)
+          }
+
+          // Vim Mode row
+          Item {
+            width: parent.width
+            height: Style.space(36)
+
+            Column {
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(1)
+              width: parent.width - qsVimSwitch.width - Style.space(8)
+
+              Text {
+                text: "Vim Mode"
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+              }
+              Text {
+                text: root.vimMode ? "Normal · Modal editing" : "Standard editing"
+                color: Util.alpha(root.foreground, 0.52)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+
+            SSwitch {
+              id: qsVimSwitch
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              checked: root.vimMode
+              onToggled: {
                 var next = SettingsStore.parseSettings(root.settings)
                 next.editor.vimMode = !next.editor.vimMode
                 root.applySettings(next)
@@ -2342,13 +2564,98 @@ Item {
             }
           }
 
-          Rectangle {
-            width: parent.width; height: Style.space(26); radius: Math.max(4, root.cornerRadius - 4)
-            color: root.ocrEnabled ? root.selectedBackground : Util.alpha(root.foreground, 0.08)
-            Text { anchors.centerIn: parent; text: "OCR: " + (root.ocrEnabled ? "ON" : "OFF") + " (" + root.ocrLanguages + ")"; color: root.ocrEnabled ? root.selectedText : root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-            MouseArea {
-              anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-              onClicked: {
+          Item { width: 1; height: Style.space(6) }
+          Rectangle { width: parent.width; height: 1; color: Util.alpha(root.foreground, 0.08) }
+          Item { width: 1; height: Style.space(6) }
+
+          // Section: Clipboard
+          Text {
+            text: "CLIPBOARD"
+            color: Util.alpha(root.selectedText, 0.6)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            font.weight: Font.DemiBold
+            bottomPadding: Style.space(4)
+          }
+
+          // History limit row
+          Item {
+            width: parent.width
+            height: Style.space(36)
+
+            Text {
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              text: "History limit"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+            }
+
+            SDropdown {
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(110)
+              model: [
+                { val: 100,  label: "100 entries" },
+                { val: 250,  label: "250 entries" },
+                { val: 500,  label: "500 entries" },
+                { val: 1000, label: "1000 entries" },
+                { val: -1,   label: "Unlimited" }
+              ]
+              currentValue: root.historyLimit
+              onSelected: function(v) {
+                var next = SettingsStore.parseSettings(root.settings)
+                next.clipboard.historyLimit = v
+                root.applySettings(next)
+              }
+            }
+          }
+
+          Item { width: 1; height: Style.space(6) }
+          Rectangle { width: parent.width; height: 1; color: Util.alpha(root.foreground, 0.08) }
+          Item { width: 1; height: Style.space(6) }
+
+          // Section: OCR
+          Text {
+            text: "SCREEN EXTRACTION"
+            color: Util.alpha(root.selectedText, 0.6)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            font.weight: Font.DemiBold
+            bottomPadding: Style.space(4)
+          }
+
+          Item {
+            width: parent.width
+            height: Style.space(36)
+
+            Column {
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(1)
+              width: parent.width - qsOcrSwitch.width - Style.space(8)
+
+              Text {
+                text: "OCR"
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+              }
+              Text {
+                text: root.ocrEnabled ? ("Language: " + root.ocrLanguages) : "Disabled"
+                color: Util.alpha(root.foreground, 0.52)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+
+            SSwitch {
+              id: qsOcrSwitch
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              checked: root.ocrEnabled
+              onToggled: {
                 var next = SettingsStore.parseSettings(root.settings)
                 next.ocr.enabled = !next.ocr.enabled
                 root.applySettings(next)
@@ -2356,36 +2663,65 @@ Item {
             }
           }
 
-          Rectangle {
-            width: parent.width; height: Style.space(26); radius: Math.max(4, root.cornerRadius - 4)
-            color: Util.alpha(root.foreground, 0.08)
+          Item { width: 1; height: Style.space(6) }
+          Rectangle { width: parent.width; height: 1; color: Util.alpha(root.foreground, 0.08) }
+          Item { width: 1; height: Style.space(6) }
+
+          // Advanced settings link
+          Item {
+            width: parent.width
+            height: Style.space(32)
+
             Text {
-              anchors.centerIn: parent
-              text: "History Limit: " + (root.historyLimit < 0 ? "Unlimited" : String(root.historyLimit))
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Advanced Settings"
               color: root.foreground
               font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
+              font.pixelSize: Style.font.body
             }
-            MouseArea {
-              anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-              onClicked: {
-                var cycle = [100, 250, 500, 1000, -1]
-                var idx = cycle.indexOf(root.historyLimit)
-                var next = SettingsStore.parseSettings(root.settings)
-                next.clipboard.historyLimit = cycle[(idx + 1) % cycle.length]
-                root.applySettings(next)
+
+            Row {
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(6)
+
+              // Keycap
+              Rectangle {
+                height: Style.space(20)
+                width: keycapAdvText.implicitWidth + Style.space(8)
+                radius: Style.space(3)
+                color: Util.alpha(root.foreground, 0.07)
+                border.width: 1
+                border.color: Util.alpha(root.foreground, 0.3)
+                anchors.verticalCenter: parent.verticalCenter
+                Text {
+                  id: keycapAdvText
+                  anchors.centerIn: parent
+                  text: "Ctrl+,"
+                  color: Util.alpha(root.foreground, 0.85)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "→"
+                color: Util.alpha(root.foreground, 0.6)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
               }
             }
-          }
 
-          Rectangle {
-            width: parent.width; height: Style.space(28); radius: Math.max(4, root.cornerRadius - 4)
-            color: advBtnMouse.containsMouse ? root.selectedBackground : Util.alpha(root.foreground, 0.12)
-            Text { anchors.centerIn: parent; text: "Advanced Settings… (Ctrl+,)"; color: advBtnMouse.containsMouse ? root.selectedText : root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall; font.weight: Font.DemiBold }
             MouseArea {
-              id: advBtnMouse
-              anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-              onClicked: root.openAdvancedSettings()
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              hoverEnabled: true
+              onClicked: {
+                root.quickSettingsOpen = false
+                root.openAdvancedSettings()
+              }
             }
           }
         }

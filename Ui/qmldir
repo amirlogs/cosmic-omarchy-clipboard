@@ -2,6 +2,15 @@ module qs.Ui
 BorderOverlay 1.0 BorderOverlay.qml
 BorderSurface 1.0 BorderSurface.qml
 ConfirmDialog 1.0 ConfirmDialog.qml
+Keycap 1.0 Keycap.qml
+KeycapRow 1.0 KeycapRow.qml
 OverlayWindow 1.0 OverlayWindow.qml
 PointerMoveGate 1.0 PointerMoveGate.qml
+SDropdown 1.0 SDropdown.qml
+SSegment 1.0 SSegment.qml
+SSlider 1.0 SSlider.qml
+SSwitch 1.0 SSwitch.qml
+SettingsRow 1.0 SettingsRow.qml
+SettingsSection 1.0 SettingsSection.qml
 SizedImage 1.0 SizedImage.qml
+WarningBanner 1.0 WarningBanner.qml

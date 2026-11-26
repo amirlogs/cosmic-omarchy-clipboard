@@ -11,3 +11,5 @@ vendor/usr/
 *.swp
 *~
 .directory
+.agents/
+skills-lock.json
