@@ -54,5 +54,10 @@ Scope {
       clipboard.startOcr(true)
       return "open-ocr"
     }
+
+    function openSettings(): string {
+      clipboard.openAdvancedSettings()
+      return "settings"
+    }
   }
 }
