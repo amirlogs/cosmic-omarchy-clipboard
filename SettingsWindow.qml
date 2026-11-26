@@ -236,12 +236,26 @@ FloatingWindow {
 
       // Content pane
       Flickable {
+        id: contentFlick
         width: parent.width - Style.space(250)
         height: parent.height
         clip: true
-        contentWidth: width
+        contentWidth: width - Style.space(10)
         contentHeight: contentCol.implicitHeight
         boundsBehavior: Flickable.StopAtBounds
+
+        Rectangle {
+          visible: contentFlick.contentHeight > contentFlick.height
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(1)
+          y: Math.max(0, contentFlick.visibleArea.yPosition * contentFlick.height)
+          width: Style.space(4)
+          height: Math.max(Style.space(24), contentFlick.visibleArea.heightRatio * contentFlick.height)
+          radius: Style.space(2)
+          color: Commons.Color.menu.text
+          opacity: 0.35
+          z: 5
+        }
 
         Column {
           id: contentCol

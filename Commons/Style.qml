@@ -463,48 +463,6 @@ QtObject {
     styleOverrides = styleOut
   }
 
-  property Process hyprctlProc: Process {
-    id: hyprctlProc
-    command: ["hyprctl", "-j", "getoption", "decoration:rounding"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.applyRoundingJson(text)
-    }
-  }
-
-  property Process animationsProc: Process {
-    id: animationsProc
-    command: ["hyprctl", "-j", "getoption", "animations:enabled"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          root.reduceMotion = JSON.parse(text || "{}").bool === false
-        } catch (e) {
-          // hyprctl missing / Hyprland not running — leave the previous value.
-        }
-      }
-    }
-  }
-
-  // A reload is when the animations toggle, a theme or the user's own config
-  // lands, and Hyprland only announces it once the new values are in effect.
-  // property Connections hyprlandEvents: Connections {
-  //   target: Hyprland
-  //   function onRawEvent(event) {
-  //     if (event && String(event.name) === "configreloaded") root.refresh()
-  //   }
-  // }
-
-  property Process gapsOutProc: Process {
-    id: gapsOutProc
-    command: ["hyprctl", "-j", "getoption", "general:gaps_out"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.applyGapsOutJson(text)
-    }
-  }
-
   // Resolve the fontconfig alias to a concrete family name. `omarchy font
   // set <name>` rewrites ~/.config/fontconfig/fonts.conf and restarts the
   // shell, but rerun on file change anyway so manual edits propagate too.

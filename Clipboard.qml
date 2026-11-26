@@ -325,7 +325,6 @@ Item {
   }
 
   function commitEditorChanges() {
-    editorSaveTimer.stop()
     var st = root.editorState
     if (!st || !st.entryId || !st.dirty) return
     var targetId = st.entryId
@@ -998,13 +997,6 @@ Item {
   }
 
   Timer {
-    id: editorSaveTimer
-    interval: 350
-    repeat: false
-    onTriggered: root.commitEditorChanges()
-  }
-
-  Timer {
     id: cursorBlinkTimer
     interval: 530
     repeat: true
@@ -1276,76 +1268,82 @@ Item {
           } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_K) {
             root.select(-1)
             event.accepted = true
-          } else if (root.vimMode && !root.listSearchActive && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier))) {
-            if (event.text === "j") {
-              root.select(1)
+          } else {
+            var handledVimList = false
+            if (root.vimMode && !root.listSearchActive && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier))) {
+              if (event.text === "j") {
+                root.select(1)
+                handledVimList = true
+              } else if (event.text === "k") {
+                root.select(-1)
+                handledVimList = true
+              } else if (event.text === "g") {
+                root.selectAbsolute(0)
+                handledVimList = true
+              } else if (event.text === "G") {
+                root.selectAbsolute(displayModel.count - 1)
+                handledVimList = true
+              } else if (event.text === "l" && displayModel.count > 0) {
+                root.focusPanel("preview")
+                handledVimList = true
+              } else if (event.text === "/" || event.text === "i") {
+                root.listSearchActive = true
+                handledVimList = true
+              } else if (event.text === "p" && root.cursorActive) {
+                root.togglePinIndex(root.selectedIndex)
+                handledVimList = true
+              } else if (event.text === "d" && root.cursorActive) {
+                root.removeDisplayIndex(root.selectedIndex)
+                handledVimList = true
+              }
+            }
+            if (handledVimList) {
               event.accepted = true
-            } else if (event.text === "k") {
-              root.select(-1)
+            } else if ((!root.vimMode || root.listSearchActive) && Util.editsFilter(event, root.filterText)) {
+              root.setFilter(Util.editedFilter(event, root.filterText))
               event.accepted = true
-            } else if (event.text === "g") {
-              root.selectAbsolute(0)
+            } else if (appAction === "clearHistory") {
+              root.requestClearHistory()
               event.accepted = true
-            } else if (event.text === "G") {
-              root.selectAbsolute(displayModel.count - 1)
-              event.accepted = true
-            } else if (event.text === "l" && displayModel.count > 0) {
-              root.focusPanel("preview")
-              event.accepted = true
-            } else if (event.text === "/" || event.text === "i") {
-              root.listSearchActive = true
-              event.accepted = true
-            } else if (event.text === "p" && root.cursorActive) {
-              root.togglePinIndex(root.selectedIndex)
-              event.accepted = true
-            } else if (event.text === "d" && root.cursorActive) {
+            } else if (appAction === "deleteEntry") {
               root.removeDisplayIndex(root.selectedIndex)
               event.accepted = true
-            }
-          } else if (Util.editsFilter(event, root.filterText)) {
-            root.setFilter(Util.editedFilter(event, root.filterText))
-            event.accepted = true
-          } else if (appAction === "clearHistory") {
-            root.requestClearHistory()
-            event.accepted = true
-          } else if (appAction === "deleteEntry") {
-            root.removeDisplayIndex(root.selectedIndex)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Right && event.modifiers === Qt.NoModifier && !root.filterText && displayModel.count > 0) {
-            root.focusPanel("preview")
-            event.accepted = true
-          } else if (event.key === Qt.Key_Left && event.modifiers === Qt.NoModifier && !root.filterText) {
-            var order = ["all", "history", "pinned"]
-            var idx = order.indexOf(root.activeTab)
-            root.switchTab(order[(idx + order.length - 1) % order.length])
-            event.accepted = true
-          } else if (event.key === Qt.Key_Up) {
-            root.select(-1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Down) {
-            root.select(1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_PageUp) {
-            root.select(-6)
-            event.accepted = true
-          } else if (event.key === Qt.Key_PageDown) {
-            root.select(6)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Home) {
-            root.selectAbsolute(0)
-            event.accepted = true
-          } else if (event.key === Qt.Key_End) {
-            root.selectAbsolute(displayModel.count - 1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            } else if (event.key === Qt.Key_Right && event.modifiers === Qt.NoModifier && !root.filterText && displayModel.count > 0) {
+              root.focusPanel("preview")
+              event.accepted = true
+            } else if (event.key === Qt.Key_Left && event.modifiers === Qt.NoModifier && !root.filterText) {
+              var order = ["all", "history", "pinned"]
+              var idx = order.indexOf(root.activeTab)
+              root.switchTab(order[(idx + order.length - 1) % order.length])
+              event.accepted = true
+            } else if (event.key === Qt.Key_Up) {
+              root.select(-1)
+              event.accepted = true
+            } else if (event.key === Qt.Key_Down) {
+              root.select(1)
+              event.accepted = true
+            } else if (event.key === Qt.Key_PageUp) {
+              root.select(-6)
+              event.accepted = true
+            } else if (event.key === Qt.Key_PageDown) {
+              root.select(6)
+              event.accepted = true
+            } else if (event.key === Qt.Key_Home) {
+              root.selectAbsolute(0)
+              event.accepted = true
+            } else if (event.key === Qt.Key_End) {
+              root.selectAbsolute(displayModel.count - 1)
+              event.accepted = true
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             if (root.cursorActive && (event.modifiers & Qt.AltModifier)) root.openIndex(root.selectedIndex)
             else if (root.cursorActive && (event.modifiers & Qt.ShiftModifier)) root.copyIndex(root.selectedIndex)
             else if (root.cursorActive) root.activateIndex(root.selectedIndex)
             else if (displayModel.count > 0) root.cursorActive = true
             event.accepted = true
-          } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127) {
-            root.setFilter(root.filterText + event.text)
-            event.accepted = true
+            } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127) {
+              root.setFilter(root.filterText + event.text)
+              event.accepted = true
+            }
           }
         }
 
@@ -1445,7 +1443,7 @@ Item {
               Rectangle {
                 id: ocrHeaderBtn
                 visible: root.ocrEnabled
-                width: Math.max(Style.space(34), root.headerHeight - Style.space(2))
+                width: Math.max(Style.space(42), ocrHeaderLabel.implicitWidth + Style.space(14))
                 height: Math.max(Style.space(34), root.headerHeight - Style.space(2))
                 radius: root.cornerRadius
                 color: ocrBtnMouse.containsMouse ? root.selectedBackground : "transparent"
@@ -1453,12 +1451,14 @@ Item {
                 border.color: Util.alpha(root.border, 0.35)
 
                 Text {
+                  id: ocrHeaderLabel
                   anchors.centerIn: parent
-                  text: "󰈭"
+                  text: "OCR"
                   color: ocrBtnMouse.containsMouse ? root.selectedText : root.foreground
-                  opacity: ocrBtnMouse.containsMouse ? 1.0 : 0.8
+                  opacity: ocrBtnMouse.containsMouse ? 1.0 : 0.85
                   font.family: root.fontFamily
-                  font.pixelSize: Style.space(18)
+                  font.pixelSize: Style.font.caption
+                  font.weight: Font.DemiBold
                 }
 
                 MouseArea {
@@ -2272,7 +2272,7 @@ Item {
                 opacity: 0.85
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
-                elide: Text.ElideRight
+                wrapMode: Text.WordWrap
               }
             }
           }
