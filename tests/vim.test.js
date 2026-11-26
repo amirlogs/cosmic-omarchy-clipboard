@@ -120,3 +120,88 @@ test("search mode (/) with n and N navigation", () => {
   press(vim, ed, "N")
   assert.equal(ed.cursor, 0)
 })
+
+test("text objects and operator-motions: ciw, diw, daw, ci\", ci(, cw, dw, C, D, o, O, r, f, J", () => {
+  const ed = Editor.createState('say "hello world" (foo bar)', "e1")
+  const vim = Vim.createVimState()
+
+  // Jump to 'hello' via f" + l -> ciw
+  press(vim, ed, "f")
+  press(vim, ed, '"')
+  press(vim, ed, "l")
+  press(vim, ed, "c")
+  press(vim, ed, "i")
+  press(vim, ed, "w")
+  assert.equal(vim.mode, "insert")
+  assert.equal(ed.text, 'say " world" (foo bar)')
+  press(vim, ed, "h")
+  press(vim, ed, "i")
+  press(vim, ed, "", { keyName: "Escape" })
+  assert.equal(ed.text, 'say "hi world" (foo bar)')
+
+  // ci" replaces inside quotes
+  press(vim, ed, "c")
+  press(vim, ed, "i")
+  press(vim, ed, '"')
+  assert.equal(vim.mode, "insert")
+  assert.equal(ed.text, 'say "" (foo bar)')
+  press(vim, ed, "o")
+  press(vim, ed, "k")
+  press(vim, ed, "", { keyName: "Escape" })
+  assert.equal(ed.text, 'say "ok" (foo bar)')
+
+  // di( inside parens
+  press(vim, ed, "f")
+  press(vim, ed, "(")
+  press(vim, ed, "l")
+  press(vim, ed, "d")
+  press(vim, ed, "i")
+  press(vim, ed, "(")
+  assert.equal(vim.mode, "normal")
+  assert.equal(ed.text, 'say "ok" ()')
+
+  // r<char>, o, J
+  press(vim, ed, "0")
+  press(vim, ed, "r")
+  press(vim, ed, "S")
+  assert.equal(ed.text, 'Say "ok" ()')
+  press(vim, ed, "o")
+  press(vim, ed, "n")
+  press(vim, ed, "e")
+  press(vim, ed, "x")
+  press(vim, ed, "t")
+  press(vim, ed, "", { keyName: "Escape" })
+  assert.equal(ed.text, 'Say "ok" ()\nnext')
+  press(vim, ed, "k")
+  press(vim, ed, "J")
+  assert.equal(ed.text, 'Say "ok" () next')
+})
+
+test("cw, dw, C, D, cc, viw work as expected", () => {
+  const ed = Editor.createState("alpha beta gamma", "e1")
+  const vim = Vim.createVimState()
+
+  // cw preserves trailing space
+  press(vim, ed, "c")
+  press(vim, ed, "w")
+  assert.equal(vim.mode, "insert")
+  assert.equal(ed.text, " beta gamma")
+  press(vim, ed, "A")
+  press(vim, ed, "", { keyName: "Escape" })
+  assert.equal(ed.text, "A beta gamma")
+
+  // w then D deletes to end of line
+  press(vim, ed, "w")
+  press(vim, ed, "D")
+  assert.equal(ed.text, "A ")
+
+  // viw selects word in visual mode
+  const ed2 = Editor.createState("one two three", "e2")
+  const vim2 = Vim.createVimState()
+  press(vim2, ed2, "w")
+  press(vim2, ed2, "v")
+  press(vim2, ed2, "i")
+  press(vim2, ed2, "w")
+  const y = press(vim2, ed2, "y")
+  assert.equal(y.yankText, "two")
+})

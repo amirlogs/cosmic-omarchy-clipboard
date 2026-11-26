@@ -171,6 +171,151 @@ function deleteVisualBlock(editor, Editor, l1, l2, c1, c2) {
   return removed.join("\n")
 }
 
+function firstNonBlankOnLine(text, pos) {
+  var b = lineBoundsAt(text, pos)
+  var i = b.start
+  while (i < b.end && (text.charAt(i) === " " || text.charAt(i) === "\t")) i++
+  return i
+}
+
+function findCharOnLine(text, pos, target, forward, till) {
+  if (!target) return -1
+  var b = lineBoundsAt(text, pos)
+  if (forward) {
+    for (var i = pos + 1; i < b.end; i++) {
+      if (text.charAt(i) === target) return till ? i - 1 : i
+    }
+  } else {
+    for (var j = pos - 1; j >= b.start; j--) {
+      if (text.charAt(j) === target) return till ? j + 1 : j
+    }
+  }
+  return -1
+}
+
+function wordObjectRange(text, pos, around) {
+  var s = String(text || "")
+  var len = s.length
+  if (len === 0) return null
+  var p = Math.max(0, Math.min(pos, len - 1))
+  var ch = s.charAt(p)
+  var start = p
+  var end = p + 1
+
+  if (isWordChar(ch)) {
+    while (start > 0 && isWordChar(s.charAt(start - 1))) start--
+    while (end < len && isWordChar(s.charAt(end))) end++
+  } else if (!/\s/.test(ch)) {
+    while (start > 0 && !/\s/.test(s.charAt(start - 1)) && !isWordChar(s.charAt(start - 1))) start--
+    while (end < len && !/\s/.test(s.charAt(end)) && !isWordChar(s.charAt(end))) end++
+  } else {
+    while (start > 0 && /[ \t]/.test(s.charAt(start - 1))) start--
+    while (end < len && /[ \t]/.test(s.charAt(end))) end++
+  }
+
+  if (around) {
+    var b = lineBoundsAt(s, p)
+    var trail = end
+    while (trail < b.end && /[ \t]/.test(s.charAt(trail))) trail++
+    if (trail > end) {
+      end = trail
+    } else {
+      while (start > b.start && /[ \t]/.test(s.charAt(start - 1))) start--
+    }
+  }
+  return { start: start, end: end }
+}
+
+function quoteObjectRange(text, pos, quote, around) {
+  var b = lineBoundsAt(text, pos)
+  var line = String(text || "").slice(b.start, b.end)
+  var rel = Math.max(0, Math.min(pos - b.start, line.length))
+  var quotes = []
+  for (var i = 0; i < line.length; i++) {
+    if (line.charAt(i) === quote && (i === 0 || line.charAt(i - 1) !== "\\")) {
+      quotes.push(i)
+    }
+  }
+  for (var q = 0; q + 1 < quotes.length; q += 2) {
+    var q1 = quotes[q]
+    var q2 = quotes[q + 1]
+    if ((rel >= q1 && rel <= q2) || q1 > rel) {
+      return around
+        ? { start: b.start + q1, end: b.start + q2 + 1 }
+        : { start: b.start + q1 + 1, end: b.start + q2 }
+    }
+  }
+  return null
+}
+
+function pairObjectRange(text, pos, openCh, closeCh, around) {
+  var s = String(text || "")
+  var p = Math.max(0, Math.min(pos, s.length - 1))
+  var depth = 0
+  var openIdx = -1
+  if (s.charAt(p) === openCh) {
+    openIdx = p
+  } else {
+    for (var i = p; i >= 0; i--) {
+      var c = s.charAt(i)
+      if (c === closeCh && i !== p) depth++
+      else if (c === openCh) {
+        if (depth === 0) { openIdx = i; break }
+        depth--
+      }
+    }
+  }
+  if (openIdx < 0) return null
+  depth = 0
+  var closeIdx = -1
+  for (var j = openIdx + 1; j < s.length; j++) {
+    var cj = s.charAt(j)
+    if (cj === openCh) depth++
+    else if (cj === closeCh) {
+      if (depth === 0) { closeIdx = j; break }
+      depth--
+    }
+  }
+  if (closeIdx < 0) return null
+  return around
+    ? { start: openIdx, end: closeIdx + 1 }
+    : { start: openIdx + 1, end: closeIdx }
+}
+
+function textObjectRange(text, pos, kind, obj) {
+  var around = (kind === "a")
+  if (obj === "w") return wordObjectRange(text, pos, around)
+  if (obj === '"' || obj === "'" || obj === "`") return quoteObjectRange(text, pos, obj, around)
+  if (obj === "(" || obj === ")" || obj === "b") return pairObjectRange(text, pos, "(", ")", around)
+  if (obj === "[" || obj === "]") return pairObjectRange(text, pos, "[", "]", around)
+  if (obj === "{" || obj === "}" || obj === "B") return pairObjectRange(text, pos, "{", "}", around)
+  if (obj === "<" || obj === ">") return pairObjectRange(text, pos, "<", ">", around)
+  return null
+}
+
+function applyOperatorOnRange(op, start, end, linewise, vim, editor, Editor, result) {
+  var s = Math.max(0, Math.min(start, editor.text.length))
+  var e = Math.max(s, Math.min(end, editor.text.length))
+  if (op === "y") {
+    vim.registerText = editor.text.slice(s, e)
+    vim.registerLinewise = !!linewise
+    result.yankText = vim.registerText
+    Editor.setCursor(editor, s, false)
+    return
+  }
+  vim.registerText = editor.text.slice(s, e)
+  vim.registerLinewise = !!linewise
+  if (e > s) {
+    Editor.setSelection(editor, s, e)
+    Editor.deleteBackward(editor, false, false)
+    result.mutated = true
+    result.commitImmediate = true
+  } else {
+    Editor.setCursor(editor, s, false)
+  }
+  if (op === "c") resetVimState(vim, "insert")
+}
+
 function runMotion(key, ctrl, vim, editor, Editor) {
   if (key === "h" || key === "Left") {
     Editor.setCursor(editor, editor.cursor - 1, false)
@@ -202,6 +347,10 @@ function runMotion(key, ctrl, vim, editor, Editor) {
   }
   if (key === "0" || key === "Home") {
     Editor.moveLineStart(editor, false)
+    return true
+  }
+  if (key === "^") {
+    Editor.setCursor(editor, firstNonBlankOnLine(editor.text, editor.cursor), false)
     return true
   }
   if (key === "$" || key === "End") {
@@ -323,8 +472,27 @@ function handleKey(vim, editor, event, Editor) {
       applyVisualSelection(vim, editor, Editor)
       return result
     }
-    if (ch === "g") {
-      vim.pending = "g"
+    if (vim.pending === "i" || vim.pending === "a") {
+      var vObj = textObjectRange(editor.text, editor.cursor, vim.pending, ch)
+      vim.pending = ""
+      if (vObj && vObj.end > vObj.start) {
+        vim.visualAnchor = vObj.start
+        Editor.setCursor(editor, vObj.end - 1, false)
+        applyVisualSelection(vim, editor, Editor)
+      }
+      return result
+    }
+    if (vim.pending === "f" || vim.pending === "F" || vim.pending === "t" || vim.pending === "T") {
+      var vFind = findCharOnLine(editor.text, editor.cursor, ch, vim.pending === "f" || vim.pending === "t", vim.pending === "t" || vim.pending === "T")
+      vim.pending = ""
+      if (vFind >= 0) {
+        Editor.setCursor(editor, vFind, false)
+        applyVisualSelection(vim, editor, Editor)
+      }
+      return result
+    }
+    if (ch === "g" || ch === "i" || ch === "a" || ch === "f" || ch === "F" || ch === "t" || ch === "T") {
+      vim.pending = ch
       return result
     }
     vim.pending = ""
@@ -378,36 +546,122 @@ function handleKey(vim, editor, event, Editor) {
     return result
   }
 
-  // Multi-key sequences: gg, dd, yy
+  // Multi-key sequences: operators (d, c, y), g, r, f/F/t/T
+  if (vim.pending === "r") {
+    vim.pending = ""
+    if (!ctrl && !alt && ch.length === 1 && ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) !== 127) {
+      var lbR = lineBoundsAt(editor.text, editor.cursor)
+      if (editor.cursor < lbR.end) {
+        Editor.setSelection(editor, editor.cursor, editor.cursor + 1)
+        Editor.insertText(editor, ch, false)
+        Editor.setCursor(editor, Math.max(lbR.start, editor.cursor - 1), false)
+        result.mutated = true
+        result.commitImmediate = true
+      }
+    }
+    return result
+  }
+  if (vim.pending === "f" || vim.pending === "F" || vim.pending === "t" || vim.pending === "T") {
+    var fPos = findCharOnLine(editor.text, editor.cursor, ch, vim.pending === "f" || vim.pending === "t", vim.pending === "t" || vim.pending === "T")
+    vim.pending = ""
+    if (fPos >= 0) Editor.setCursor(editor, fPos, false)
+    return result
+  }
   if (vim.pending === "g") {
     vim.pending = ""
     if (ch === "g") {
       Editor.moveDocStart(editor, false)
       return result
     }
-  } else if (vim.pending === "d") {
+  } else if (vim.pending.length === 2 && (vim.pending.charAt(0) === "d" || vim.pending.charAt(0) === "c" || vim.pending.charAt(0) === "y")) {
+    var op2 = vim.pending.charAt(0)
+    var sub2 = vim.pending.charAt(1)
     vim.pending = ""
-    if (ch === "d") {
-      var bD = lineBoundsAt(editor.text, editor.cursor)
-      var endD = bD.end < editor.text.length ? bD.end + 1 : bD.end
-      var startD = bD.start > 0 && endD === editor.text.length && bD.end === editor.text.length ? bD.start - 1 : bD.start
-      vim.registerText = editor.text.slice(bD.start, bD.end) + "\n"
-      vim.registerLinewise = true
-      Editor.setSelection(editor, startD, endD)
-      Editor.deleteBackward(editor, false, false)
-      result.mutated = true
-      result.commitImmediate = true
+    if (sub2 === "i" || sub2 === "a") {
+      var objR = textObjectRange(editor.text, editor.cursor, sub2, ch)
+      if (objR) applyOperatorOnRange(op2, objR.start, objR.end, false, vim, editor, Editor, result)
       return result
     }
-  } else if (vim.pending === "y") {
-    vim.pending = ""
-    if (ch === "y") {
-      var bY = lineBoundsAt(editor.text, editor.cursor)
-      vim.registerText = editor.text.slice(bY.start, bY.end) + "\n"
-      vim.registerLinewise = true
-      result.yankText = vim.registerText
+    if (sub2 === "f" || sub2 === "F" || sub2 === "t" || sub2 === "T") {
+      var fwd2 = (sub2 === "f" || sub2 === "t")
+      var till2 = (sub2 === "t" || sub2 === "T")
+      var hit2 = findCharOnLine(editor.text, editor.cursor, ch, fwd2, till2)
+      if (hit2 >= 0) {
+        var rS = fwd2 ? editor.cursor : hit2
+        var rE = fwd2 ? hit2 + 1 : editor.cursor
+        applyOperatorOnRange(op2, rS, rE, false, vim, editor, Editor, result)
+      }
       return result
     }
+    if (sub2 === "g" && ch === "g") {
+      applyOperatorOnRange(op2, 0, editor.cursor, false, vim, editor, Editor, result)
+      return result
+    }
+    return result
+  } else if (vim.pending === "d" || vim.pending === "c" || vim.pending === "y") {
+    var op1 = vim.pending
+    if (ch === "i" || ch === "a" || ch === "f" || ch === "F" || ch === "t" || ch === "T" || ch === "g") {
+      vim.pending = op1 + ch
+      return result
+    }
+    vim.pending = ""
+    if (ch === op1) {
+      var bLine = lineBoundsAt(editor.text, editor.cursor)
+      if (op1 === "c") {
+        applyOperatorOnRange("c", bLine.start, bLine.end, false, vim, editor, Editor, result)
+      } else if (op1 === "y") {
+        vim.registerText = editor.text.slice(bLine.start, bLine.end) + "\n"
+        vim.registerLinewise = true
+        result.yankText = vim.registerText
+      } else {
+        var endD = bLine.end < editor.text.length ? bLine.end + 1 : bLine.end
+        var startD = bLine.start > 0 && endD === editor.text.length && bLine.end === editor.text.length ? bLine.start - 1 : bLine.start
+        vim.registerText = editor.text.slice(bLine.start, bLine.end) + "\n"
+        vim.registerLinewise = true
+        Editor.setSelection(editor, startD, endD)
+        Editor.deleteBackward(editor, false, false)
+        result.mutated = true
+        result.commitImmediate = true
+      }
+      return result
+    }
+    if (ch === "w") {
+      var wEnd = op1 === "c"
+        ? (isWordChar(editor.text.charAt(editor.cursor)) || !/\s/.test(editor.text.charAt(editor.cursor)) ? wordObjectRange(editor.text, editor.cursor, false).end : nextWordStartPos(editor.text, editor.cursor))
+        : nextWordStartPos(editor.text, editor.cursor)
+      applyOperatorOnRange(op1, editor.cursor, wEnd, false, vim, editor, Editor, result)
+      return result
+    }
+    if (ch === "e") {
+      var ePos = wordEndPos(editor.text, editor.cursor)
+      applyOperatorOnRange(op1, editor.cursor, Math.min(editor.text.length, ePos + 1), false, vim, editor, Editor, result)
+      return result
+    }
+    if (ch === "b") {
+      var bPos = prevWordStartPos(editor.text, editor.cursor)
+      applyOperatorOnRange(op1, bPos, editor.cursor, false, vim, editor, Editor, result)
+      return result
+    }
+    if (ch === "$") {
+      var bDol = lineBoundsAt(editor.text, editor.cursor)
+      applyOperatorOnRange(op1, editor.cursor, bDol.end, false, vim, editor, Editor, result)
+      return result
+    }
+    if (ch === "0") {
+      var bZero = lineBoundsAt(editor.text, editor.cursor)
+      applyOperatorOnRange(op1, bZero.start, editor.cursor, false, vim, editor, Editor, result)
+      return result
+    }
+    if (ch === "^") {
+      var fnb = firstNonBlankOnLine(editor.text, editor.cursor)
+      applyOperatorOnRange(op1, Math.min(fnb, editor.cursor), Math.max(fnb, editor.cursor), false, vim, editor, Editor, result)
+      return result
+    }
+    if (ch === "G") {
+      applyOperatorOnRange(op1, editor.cursor, editor.text.length, false, vim, editor, Editor, result)
+      return result
+    }
+    return result
   }
 
   if (ctrl && (ch === "r" || keyName === "R")) {
@@ -426,7 +680,7 @@ function handleKey(vim, editor, event, Editor) {
     return result
   }
 
-  if (ch === "g" || ch === "d" || ch === "y") {
+  if (ch === "g" || ch === "d" || ch === "c" || ch === "y" || ch === "r" || ch === "f" || ch === "F" || ch === "t" || ch === "T") {
     vim.pending = ch
     return result
   }
@@ -450,6 +704,70 @@ function handleKey(vim, editor, event, Editor) {
       result.mutated = true
       result.commitImmediate = true
     }
+    return result
+  }
+  if (ch === "X") {
+    var lbXb = lineBoundsAt(editor.text, editor.cursor)
+    if (editor.cursor > lbXb.start) {
+      vim.registerText = editor.text.charAt(editor.cursor - 1)
+      vim.registerLinewise = false
+      Editor.deleteBackward(editor, false, false)
+      result.mutated = true
+      result.commitImmediate = true
+    }
+    return result
+  }
+  if (ch === "s") {
+    var lbS = lineBoundsAt(editor.text, editor.cursor)
+    applyOperatorOnRange("c", editor.cursor, Math.min(lbS.end, editor.cursor + 1), false, vim, editor, Editor, result)
+    return result
+  }
+  if (ch === "S") {
+    var lbSb = lineBoundsAt(editor.text, editor.cursor)
+    applyOperatorOnRange("c", lbSb.start, lbSb.end, false, vim, editor, Editor, result)
+    return result
+  }
+  if (ch === "C" || ch === "D") {
+    var lbCD = lineBoundsAt(editor.text, editor.cursor)
+    applyOperatorOnRange(ch === "C" ? "c" : "d", editor.cursor, lbCD.end, false, vim, editor, Editor, result)
+    return result
+  }
+  if (ch === "Y") {
+    var lbY = lineBoundsAt(editor.text, editor.cursor)
+    vim.registerText = editor.text.slice(lbY.start, lbY.end) + "\n"
+    vim.registerLinewise = true
+    result.yankText = vim.registerText
+    return result
+  }
+  if (ch === "J") {
+    var lbJ = lineBoundsAt(editor.text, editor.cursor)
+    if (lbJ.end < editor.text.length) {
+      var nextStart = lbJ.end + 1
+      var nextNonBlank = nextStart
+      while (nextNonBlank < editor.text.length && (editor.text.charAt(nextNonBlank) === " " || editor.text.charAt(nextNonBlank) === "\t")) nextNonBlank++
+      Editor.setSelection(editor, lbJ.end, nextNonBlank)
+      Editor.insertText(editor, " ", false)
+      Editor.setCursor(editor, lbJ.end, false)
+      result.mutated = true
+      result.commitImmediate = true
+    }
+    return result
+  }
+  if (ch === "o") {
+    var lbO = lineBoundsAt(editor.text, editor.cursor)
+    Editor.setCursor(editor, lbO.end, false)
+    Editor.insertText(editor, "\n", false)
+    resetVimState(vim, "insert")
+    result.mutated = true
+    return result
+  }
+  if (ch === "O") {
+    var lbOb = lineBoundsAt(editor.text, editor.cursor)
+    Editor.setCursor(editor, lbOb.start, false)
+    Editor.insertText(editor, "\n", false)
+    Editor.setCursor(editor, lbOb.start, false)
+    resetVimState(vim, "insert")
+    result.mutated = true
     return result
   }
   if (ch === "p" || ch === "P") {
