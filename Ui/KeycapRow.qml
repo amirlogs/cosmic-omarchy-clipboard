@@ -14,6 +14,7 @@ Item {
   property bool conflicted: false
   signal edit()
   signal clear()
+  signal cancel()
 
   implicitHeight: description.length > 0 ? Style.space(52) : Style.space(44)
   implicitWidth: parent ? parent.width : Style.space(300)
@@ -46,7 +47,10 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.edit()
+        onClicked: {
+          if (root.recording) root.cancel()
+          else root.edit()
+        }
       }
     }
 

@@ -13,6 +13,7 @@ Item {
 
   implicitHeight: description.length > 0 ? Style.space(52) : Style.space(44)
   implicitWidth: parent ? parent.width : Style.space(300)
+  z: (controlSlot.children.length > 0 && controlSlot.children[0]._open) ? 200 : 1
 
   // Label+description left side
   Column {

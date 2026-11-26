@@ -21,6 +21,24 @@ Item {
   height: implicitHeight
   z: _open ? 1000 : 1
 
+  on_OpenChanged: {
+    var p = root.parent
+    var depth = 0
+    while (p && depth < 5) {
+      if (p.z !== undefined) {
+        if (root._open) {
+          if (p._savedZ === undefined) p._savedZ = p.z
+          p.z = 200
+        } else if (p._savedZ !== undefined) {
+          p.z = p._savedZ
+          p._savedZ = undefined
+        }
+      }
+      p = p.parent
+      depth++
+    }
+  }
+
   readonly property string currentLabel: {
     for (var i = 0; i < root.model.length; i++) {
       if (root.model[i].val === root.currentValue) return root.model[i].label
@@ -83,6 +101,13 @@ Item {
     border.width: 1
     border.color: Util.alpha(Commons.Color.foreground, 0.22)
     clip: true
+
+    Keys.onPressed: function(event) {
+      if (event.key === Qt.Key_Escape) {
+        root._open = false
+        event.accepted = true
+      }
+    }
 
     ListView {
       anchors.fill: parent

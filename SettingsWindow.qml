@@ -180,18 +180,48 @@ FloatingWindow {
               ? Util.alpha(Commons.Color.accent, 0.5)
               : Util.alpha(Commons.Color.menu.text, 0.14)
 
-            Text {
+            Row {
               anchors.fill: parent
               anchors.leftMargin: Style.space(10)
-              anchors.rightMargin: Style.space(10)
-              verticalAlignment: Text.AlignVCenter
-              textFormat: Text.PlainText
-              text: win.searchQuery || "Search settings…"
-              color: Commons.Color.menu.text
-              opacity: win.searchQuery ? 1.0 : 0.45
-              font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.bodySmall
-              elide: Text.ElideRight
+              anchors.rightMargin: Style.space(8)
+
+              Text {
+                width: parent.width - (clearSearchBtn.visible ? clearSearchBtn.width + Style.space(4) : 0)
+                height: parent.height
+                verticalAlignment: Text.AlignVCenter
+                textFormat: Text.PlainText
+                text: win.searchQuery || "Search settings…"
+                color: Commons.Color.menu.text
+                opacity: win.searchQuery ? 1.0 : 0.45
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.bodySmall
+                elide: Text.ElideRight
+              }
+
+              Text {
+                id: clearSearchBtn
+                visible: win.searchQuery.length > 0
+                anchors.verticalCenter: parent.verticalCenter
+                text: "✕"
+                color: Util.alpha(Commons.Color.menu.text, 0.6)
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.caption
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    win.searchQuery = ""
+                    settingsKeys.forceActiveFocus()
+                  }
+                }
+              }
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              z: -1
+              cursorShape: Qt.IBeamCursor
+              onClicked: settingsKeys.forceActiveFocus()
             }
           }
 
@@ -433,6 +463,10 @@ FloatingWindow {
                   win.recordingAction = modelData.action
                   settingsKeys.forceActiveFocus()
                 }
+                onCancel: {
+                  win.recordingScope = ""
+                  win.recordingAction = ""
+                }
                 onClear: win.recordBinding(modelData.scope, modelData.action, "")
               }
             }
@@ -462,6 +496,10 @@ FloatingWindow {
                   win.recordingAction = modelData.action
                   settingsKeys.forceActiveFocus()
                 }
+                onCancel: {
+                  win.recordingScope = ""
+                  win.recordingAction = ""
+                }
                 onClear: win.recordBinding(modelData.scope, modelData.action, "")
               }
             }
@@ -488,6 +526,10 @@ FloatingWindow {
                   win.recordingAction = modelData.action
                   settingsKeys.forceActiveFocus()
                 }
+                onCancel: {
+                  win.recordingScope = ""
+                  win.recordingAction = ""
+                }
                 onClear: win.recordBinding(modelData.scope, modelData.action, "")
               }
             }
@@ -510,6 +552,10 @@ FloatingWindow {
                   win.recordingScope = modelData.scope
                   win.recordingAction = modelData.action
                   settingsKeys.forceActiveFocus()
+                }
+                onCancel: {
+                  win.recordingScope = ""
+                  win.recordingAction = ""
                 }
                 onClear: win.recordBinding(modelData.scope, modelData.action, "")
               }

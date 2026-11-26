@@ -139,6 +139,9 @@ Item {
     root.settings = SettingsStore.parseSettings(nextSettings)
     root.vimState.jkExit = root.settings.editor.jkExit
     settingsFile.setText(SettingsStore.serializeSettings(root.settings))
+    root.history = ClipboardHistory.applyLimit(root.history, root.settings.clipboard.historyLimit)
+    root.saveHistory()
+    if (root.opened) root.rebuildDisplay()
     root.editorRevision++
   }
 
@@ -2582,6 +2585,7 @@ Item {
           Item {
             width: parent.width
             height: Style.space(36)
+            z: qsHistLimitDropdown._open ? 50 : 1
 
             Text {
               anchors.left: parent.left
@@ -2593,6 +2597,7 @@ Item {
             }
 
             SDropdown {
+              id: qsHistLimitDropdown
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
               width: Style.space(110)
