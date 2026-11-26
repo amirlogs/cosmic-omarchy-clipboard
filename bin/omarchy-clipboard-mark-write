@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Mark the next clipboard write as the app's own.
+#
+#   omarchy-clipboard-mark-write --mode suppress --source editor < text
+#   omarchy-clipboard-mark-write --mode tag --source ocr < ocr.txt
+#
+# The watcher (capture.sh) hashes the clipboard payload and consumes the
+# marker once. `suppress` drops the event; `tag` records it once with the
+# given source. The marker expires so a failed write cannot silence capture.
+
+set -euo pipefail
+umask 077
+
+MODE="suppress"
+SOURCE="clipboard"
+TTL=10
+
+while (( $# > 0 )); do
+  case "$1" in
+    --mode) MODE="${2:-suppress}"; shift 2 ;;
+    --source) SOURCE="${2:-clipboard}"; shift 2 ;;
+    --ttl) TTL="${2:-10}"; shift 2 ;;
+    *) break ;;
+  esac
+done
+
+case "$MODE" in
+  suppress|tag) ;;
+  *) echo "invalid --mode: $MODE" >&2; exit 2 ;;
+esac
+[[ $TTL =~ ^[0-9]+$ ]] || TTL=10
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy"
+mkdir -p "$STATE_DIR"
+chmod 700 "$STATE_DIR" 2>/dev/null || true
+MARKER_FILE="$STATE_DIR/clipboard-self-write.json"
+
+hash=$(sha256sum | awk '{print $1}')
+expires=$(( $(date +%s) + TTL ))
+
+tmp=$(mktemp --tmpdir="$STATE_DIR" self-write.XXXXXX)
+trap 'rm -f -- "$tmp"' EXIT
+
+jq -cn \
+  --arg hash "$hash" \
+  --arg mode "$MODE" \
+  --arg source "$SOURCE" \
+  --argjson expires "$expires" \
+  '{hash:$hash, mode:$mode, source:$source, expiresAt:$expires}' >"$tmp"
+
+mv -f "$tmp" "$MARKER_FILE"

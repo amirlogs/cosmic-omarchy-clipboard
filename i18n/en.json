@@ -1,0 +1,28 @@
+{
+  "common.cancel": "Cancel",
+  "common.confirm": "Confirm",
+  "common.delete": "Delete",
+  "common.search": "Search",
+  "common.noMatchesFor": "No matches for “%1”",
+  "clipboard.search": "Search clipboard…",
+  "clipboard.empty": "Clipboard history is empty",
+  "clipboard.emptyPinned": "No pinned entries",
+  "clipboard.deleteHistory": "Delete all clipboard history? Pinned entries are kept.",
+  "clipboard.deleted": "Entry deleted",
+  "clipboard.historyCleared": "History cleared",
+  "clipboard.undo": "Undo",
+  "clipboard.files": {
+    "one": "%1 file",
+    "other": "%1 files"
+  },
+  "clipboard.image": "Image",
+  "clipboard.imageFrom": "Image from %1",
+  "clipboard.screenshotFrom": "Screenshot from %1",
+  "clipboard.pin": "Pin",
+  "clipboard.unpin": "Unpin",
+  "clipboard.pinned": "Pinned",
+  "clipboard.unpinned": "Unpinned",
+  "clipboard.history": "History",
+  "clipboard.findInEntry": "Find in entry…",
+  "clipboard.selectionCopied": "Selection copied"
+}

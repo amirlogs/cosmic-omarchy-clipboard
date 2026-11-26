@@ -30,5 +30,34 @@ Scope {
     function status(): string {
       return clipboard.opened ? "opened" : "closed"
     }
+
+    function togglePin(): string {
+      clipboard.togglePinIndex(clipboard.selectedIndex)
+      return "ok"
+    }
+
+    function togglePanel(): string {
+      clipboard.togglePanelFocus()
+      return clipboard.activePanel
+    }
+
+    function activePanel(): string {
+      return clipboard.activePanel
+    }
+
+    function startOcr(): string {
+      clipboard.startOcr(false)
+      return "ocr"
+    }
+
+    function openAndOcr(): string {
+      clipboard.startOcr(true)
+      return "open-ocr"
+    }
+
+    function openSettings(): string {
+      clipboard.openAdvancedSettings()
+      return "settings"
+    }
   }
 }

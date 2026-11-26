@@ -54,10 +54,14 @@ if content.endswith("}"):
   fi
 fi
 
-# 5. Start / Restart background daemon
+# 5. Start / Restart background daemon (without opening the overlay)
 echo "==> Starting Omarchy Clipboard daemon..."
 "$REPO_DIR/bin/omarchy-clipboard" kill >/dev/null 2>&1 || true
-"$REPO_DIR/bin/omarchy-clipboard" status >/dev/null 2>&1 || true
+setsid "$REPO_DIR/bin/omarchy-clipboard" --daemon >/dev/null 2>&1 </dev/null &
+for _ in {1..20}; do
+  "$REPO_DIR/bin/omarchy-clipboard" status >/dev/null 2>&1 && break
+  sleep 0.1
+done
 
 echo "==> Installation complete!"
 echo "Press Super + V or run 'omarchy-clipboard toggle' to open."

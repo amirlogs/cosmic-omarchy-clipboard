@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Syncs global shortcuts (openClipboard, ocrExtract, clipboardAndOcr) from
+# ~/.config/omarchy-clipboard/keybindings.json into COSMIC custom shortcuts.
+
+set -euo pipefail
+
+SHORTCUTS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/cosmic/com.system76.CosmicSettings.Shortcuts/v1/custom"
+KB_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-clipboard/keybindings.json"
+BIN_PATH="$HOME/.local/bin/omarchy-clipboard"
+
+[[ -f $SHORTCUTS_FILE ]] || exit 0
+[[ -f $KB_FILE ]] || exit 0
+
+cp "$SHORTCUTS_FILE" "$SHORTCUTS_FILE.bak"
+
+python3 - "$SHORTCUTS_FILE" "$KB_FILE" "$BIN_PATH" <<'PY'
+import json, re, sys
+
+shortcuts_path, kb_path, bin_path = sys.argv[1:4]
+with open(kb_path, "r") as f:
+    kb = json.load(f)
+
+g = kb.get("global", {})
+actions = [
+    ("COSMIC Clipboard", g.get("openClipboard", "Super+V"), f"{bin_path} toggle"),
+    ("COSMIC Clipboard OCR", g.get("ocrExtract", "Super+Shift+S"), f"{bin_path} ocr"),
+    ("COSMIC Clipboard + OCR", g.get("clipboardAndOcr", ""), f"{bin_path} open-ocr"),
+]
+
+with open(shortcuts_path, "r") as f:
+    raw = f.read()
+
+# Strip existing managed Omarchy Clipboard entries before re-adding configured ones.
+for desc, _, _ in actions:
+    pattern = re.compile(
+        r'\s*\(\s*modifiers:\s*\[[^\]]*\],\s*key:\s*"[^"]*",\s*description:\s*Some\("'
+        + re.escape(desc)
+        + r'"\),\s*\):\s*Spawn\("[^"]*"\),\n?',
+        re.MULTILINE,
+    )
+    raw = pattern.sub("\n", raw)
+
+entries = []
+for desc, combo, cmd in actions:
+    combo = (combo or "").strip()
+    if not combo:
+        continue
+    parts = [p.strip() for p in combo.split("+") if p.strip()]
+    if not parts:
+        continue
+    key = parts[-1]
+    mods = []
+    for m in parts[:-1]:
+        ml = m.lower()
+        if ml in ("super", "meta"): mods.append("Super")
+        elif ml in ("ctrl", "control"): mods.append("Ctrl")
+        elif ml == "shift": mods.append("Shift")
+        elif ml == "alt": mods.append("Alt")
+    mod_lines = "\n".join(f"            {m}," for m in mods)
+    entries.append(
+        f'    (\n        modifiers: [\n{mod_lines}\n        ],\n        key: "{key}",\n        description: Some("{desc}"),\n    ): Spawn("{cmd}"),'
+    )
+
+raw = raw.rstrip()
+if raw.endswith("}") and entries:
+    raw = raw[:-1].rstrip() + "\n" + "\n".join(entries) + "\n}\n"
+
+with open(shortcuts_path, "w") as f:
+    f.write(raw)
+PY

@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Clipboard
-Comment=Omarchy Clipboard Manager
+Comment=COSMIC Clipboard Manager
 Exec=omarchy-clipboard toggle
 Icon=edit-paste
 Terminal=false

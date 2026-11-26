@@ -39,20 +39,18 @@ The [Omarchy Quattro](https://github.com/omacom/omarchy) clipboard is widely rec
 
 ## Key Features
 
-- **Split Two-Pane Overlay**: Left pane displays chronological history with icons; right pane provides instant full-text or full-image previews.
-- **Text & Image Capture**: Automatic background capture of text, URLs, file paths, and PNG screenshots via `wl-paste --watch`.
-- **Deduplication & Image Hashing**: Content-addressed SHA-256 storage for copied images in `~/.local/state/omarchy/clipboard-images/`.
-- **Keyboard-First Workflow**:
-  - `↑` / `↓` or `PageUp` / `PageDown`: Navigate entries.
-  - `Enter`: Copy and paste into the active window.
-  - `Shift + Enter`: Copy to clipboard without pasting.
-  - `Alt + Enter`: Open URLs in browser, files in editor, or images in default viewer.
-  - `Delete`: Remove selected item from history.
-  - `Shift + Delete`: Clear all clipboard history (with confirmation dialog).
-  - `Escape`: Clear search filter, or dismiss the overlay.
-  - Immediate typing filters history in real-time.
-- **Zero-Latency Summoning**: Daemon stays loaded in memory and responds to IPC toggles instantly.
-- **HiDPI Scaling Aware**: Dynamically adapts to fractional and integer display scaling (e.g. 1728 × 1152 at 2x scaling).
+- **Workspace Tabs & Unified Search**: `All`, `History`, and `Pinned` tabs with `All types` / `Text` / `Images` filters, live search, and HTML-safe match highlighting.
+- **Two-Panel Interactive Navigation**: `Tab` / `Shift+Tab` switches focus between the left entry list and the right editor/preview pane.
+- **Lightweight Text Editor & Optional Vim Mode**: Edit text entries directly in the right panel with coalesced `Ctrl+Z` / `Ctrl+Shift+Z` undo/redo, `Ctrl+F` in-entry search, partial selection copy (`Ctrl+C`), debounced auto-save, and feedback-suppressed Wayland clipboard sync. Toggleable Vim mode (`Normal`, `Insert` with optional `jk` exit, `Visual`, `Visual Line`, `Visual Block`, and `/` search).
+- **Screen-Region OCR**: Interactive mouse + keyboard region overlay (`Ctrl+O` or `Super+Shift+S`) backed by `grim` + local `tesseract`, with installed language pack detection (`eng`, `amh`).
+- **Image Preview & Actions**: Displays image dimensions, file size, MIME type, and quick actions (`Copy`, `Save`, `Pin/Unpin`, `Delete`).
+- **Retention, Cleanup & Settings**: Configurable limits (`100`–`1000` or `Unlimited`), age-based/manual pruning protecting pinned entries, orphaned image cleanup, Quick Settings popover, and a full `SettingsWindow` (`Ctrl+,`) with visual keybinding recorder and conflict detection.
+
+## Testing
+
+```bash
+node --test tests/*.test.js
+```
 
 ---
 
