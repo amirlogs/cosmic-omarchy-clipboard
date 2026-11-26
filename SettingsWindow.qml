@@ -33,7 +33,9 @@ FloatingWindow {
   color: "transparent"
 
   onVisibleChanged: {
-    if (!visible && opened) {
+    if (visible) {
+      Qt.callLater(function() { settingsKeys.forceActiveFocus() })
+    } else if (opened) {
       opened = false
       recordingScope = ""
       recordingAction = ""
@@ -93,7 +95,12 @@ FloatingWindow {
           var qtCodes = {
             Key_Tab: Qt.Key_Tab, Key_Backtab: Qt.Key_Backtab, Key_Delete: Qt.Key_Delete,
             Key_Backspace: Qt.Key_Backspace, Key_Escape: Qt.Key_Escape, Key_Return: Qt.Key_Return,
-            Key_Enter: Qt.Key_Enter, Key_F3: Qt.Key_F3, Key_Comma: Qt.Key_Comma
+            Key_Enter: Qt.Key_Enter, Key_Space: Qt.Key_Space,
+            Key_Left: Qt.Key_Left, Key_Right: Qt.Key_Right, Key_Up: Qt.Key_Up, Key_Down: Qt.Key_Down,
+            Key_Home: Qt.Key_Home, Key_End: Qt.Key_End, Key_PageUp: Qt.Key_PageUp, Key_PageDown: Qt.Key_PageDown,
+            Key_F1: Qt.Key_F1, Key_F3: Qt.Key_F3, Key_F12: Qt.Key_F12,
+            Key_Comma: Qt.Key_Comma, Key_Period: Qt.Key_Period, Key_Slash: Qt.Key_Slash,
+            Key_Control: Qt.Key_Control, Key_Shift: Qt.Key_Shift, Key_Alt: Qt.Key_Alt, Key_Meta: Qt.Key_Meta
           }
           var combo = Keybindings.qtEventToCombo(event.key, event.modifiers, event.text, qtCodes)
           if (combo) {
@@ -257,12 +264,19 @@ FloatingWindow {
                 Rectangle {
                   required property string modelData
                   readonly property bool on: win.settings.general.defaultTab === modelData
-                  width: dtLbl.implicitWidth + Style.space(14); height: Style.space(34); radius: Style.cornerRadius
+                  width: dtLbl.implicitWidth + Style.space(16); height: Style.space(34); radius: Style.cornerRadius
                   color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: dtLbl; anchors.centerIn: parent; text: modelData; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
+                  Text { id: dtLbl; anchors.centerIn: parent; text: modelData; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title }
                   MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.general.defaultTab = modelData }) }
                 }
               }
+            }
+
+            Rectangle {
+              width: cocLbl.implicitWidth + Style.space(22); height: Style.space(34); radius: Style.cornerRadius
+              color: win.settings.general.closeOnCopy ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
+              Text { id: cocLbl; anchors.centerIn: parent; text: "Close Overlay After Copy: " + (win.settings.general.closeOnCopy ? "On" : "Off"); color: win.settings.general.closeOnCopy ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title }
+              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.general.closeOnCopy = !s.general.closeOnCopy }) }
             }
           }
 
@@ -290,11 +304,16 @@ FloatingWindow {
                 { scope: "global", action: "ocrExtract", label: "Global: Screen OCR" },
                 { scope: "global", action: "clipboardAndOcr", label: "Global: Clipboard + OCR" },
                 { scope: "app", action: "switchPanel", label: "App: Switch Panel" },
+                { scope: "app", action: "switchTab", label: "App: Next Tab" },
                 { scope: "app", action: "togglePin", label: "App: Pin / Unpin" },
+                { scope: "app", action: "deleteEntry", label: "App: Delete Entry" },
+                { scope: "app", action: "undoDelete", label: "App: Undo Delete" },
                 { scope: "app", action: "startOcr", label: "App: Start OCR" },
                 { scope: "app", action: "openSettings", label: "App: Open Settings" },
                 { scope: "normal", action: "undo", label: "Editor (Normal): Undo" },
                 { scope: "normal", action: "redo", label: "Editor (Normal): Redo" },
+                { scope: "normal", action: "copySelection", label: "Editor (Normal): Copy Selection" },
+                { scope: "normal", action: "paste", label: "Editor (Normal): Paste" },
                 { scope: "normal", action: "find", label: "Editor (Normal): Find" },
                 { scope: "vim", action: "undo", label: "Editor (Vim): Undo" },
                 { scope: "vim", action: "redo", label: "Editor (Vim): Redo" }
@@ -303,17 +322,17 @@ FloatingWindow {
               Row {
                 required property var modelData
                 width: parent.width
-                height: Style.space(34)
-                spacing: Style.space(10)
+                height: Style.space(36)
+                spacing: Style.space(8)
 
                 Text {
                   anchors.verticalCenter: parent.verticalCenter
-                  width: parent.width - Style.space(150)
+                  width: parent.width - Style.space(210)
                   textFormat: Text.PlainText
                   text: modelData.label
                   color: Commons.Color.menu.text
                   font.family: Style.font.menuFamily
-                  font.pixelSize: Style.font.heading
+                  font.pixelSize: Style.font.title
                   elide: Text.ElideRight
                 }
 
@@ -345,6 +364,29 @@ FloatingWindow {
                     }
                   }
                 }
+
+                Rectangle {
+                  width: Style.space(56)
+                  height: Style.space(32)
+                  radius: Style.cornerRadius
+                  color: Util.alpha(Commons.Color.menu.text, 0.06)
+
+                  Text {
+                    anchors.centerIn: parent
+                    textFormat: Text.PlainText
+                    text: "Clear"
+                    color: Commons.Color.menu.text
+                    opacity: 0.72
+                    font.family: Style.font.menuFamily
+                    font.pixelSize: Style.font.subtitle
+                  }
+
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: win.recordBinding(modelData.scope, modelData.action, "")
+                  }
+                }
               }
             }
           }
@@ -369,6 +411,38 @@ FloatingWindow {
               color: win.settings.editor.jkExit ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
               Text { id: jkLbl; anchors.centerIn: parent; text: "Vim 'jk' Insert Exit: " + (win.settings.editor.jkExit ? "Enabled" : "Disabled"); color: win.settings.editor.jkExit ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
               MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.editor.jkExit = !s.editor.jkExit }) }
+            }
+
+            Row {
+              spacing: Style.space(8)
+              Text { anchors.verticalCenter: parent.verticalCenter; text: "Cursor Style:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
+              Repeater {
+                model: ["auto", "line", "block"]
+                Rectangle {
+                  required property string modelData
+                  readonly property bool on: win.settings.editor.cursorStyle === modelData
+                  width: csLbl.implicitWidth + Style.space(16); height: Style.space(34); radius: Style.cornerRadius
+                  color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
+                  Text { id: csLbl; anchors.centerIn: parent; text: modelData; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title }
+                  MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.editor.cursorStyle = modelData }) }
+                }
+              }
+            }
+
+            Row {
+              spacing: Style.space(8)
+              Text { anchors.verticalCenter: parent.verticalCenter; text: "Editor Font Size:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
+              Repeater {
+                model: [12, 14, 16, 18]
+                Rectangle {
+                  required property int modelData
+                  readonly property bool on: win.settings.editor.fontSize === modelData
+                  width: fsLbl.implicitWidth + Style.space(16); height: Style.space(34); radius: Style.cornerRadius
+                  color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
+                  Text { id: fsLbl; anchors.centerIn: parent; text: modelData + "px"; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title }
+                  MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.editor.fontSize = modelData }) }
+                }
+              }
             }
           }
 
@@ -529,10 +603,26 @@ FloatingWindow {
                 Rectangle {
                   required property real modelData
                   readonly property bool on: Math.abs(win.settings.appearance.backgroundOpacity - modelData) < 0.01
-                  width: opLbl.implicitWidth + Style.space(14); height: Style.space(34); radius: Style.cornerRadius
+                  width: opLbl.implicitWidth + Style.space(16); height: Style.space(34); radius: Style.cornerRadius
                   color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: opLbl; anchors.centerIn: parent; text: Math.round(modelData * 100) + "%"; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.subtitle }
+                  Text { id: opLbl; anchors.centerIn: parent; text: Math.round(modelData * 100) + "%"; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title }
                   MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.appearance.backgroundOpacity = modelData }) }
+                }
+              }
+            }
+
+            Text { text: "Corner Radius:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
+            Row {
+              spacing: Style.space(6)
+              Repeater {
+                model: [0, 8, 12, 16]
+                Rectangle {
+                  required property int modelData
+                  readonly property bool on: win.settings.appearance.cornerRadius === modelData
+                  width: crLbl.implicitWidth + Style.space(16); height: Style.space(34); radius: Style.cornerRadius
+                  color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
+                  Text { id: crLbl; anchors.centerIn: parent; text: modelData + "px"; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title }
+                  MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.appearance.cornerRadius = modelData }) }
                 }
               }
             }

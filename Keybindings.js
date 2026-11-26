@@ -205,10 +205,26 @@ function qtEventToCombo(key, modifiers, text, qtKeys) {
     else if (key === qtKeys.Key_Backspace) name = "Backspace"
     else if (key === qtKeys.Key_Escape) name = "Escape"
     else if (key === qtKeys.Key_Return || key === qtKeys.Key_Enter) name = "Return"
-    else if (key === qtKeys.Key_F3) name = "F3"
+    else if (key === qtKeys.Key_Space) name = "Space"
+    else if (key === qtKeys.Key_Left) name = "Left"
+    else if (key === qtKeys.Key_Right) name = "Right"
+    else if (key === qtKeys.Key_Up) name = "Up"
+    else if (key === qtKeys.Key_Down) name = "Down"
+    else if (key === qtKeys.Key_Home) name = "Home"
+    else if (key === qtKeys.Key_End) name = "End"
+    else if (key === qtKeys.Key_PageUp) name = "PageUp"
+    else if (key === qtKeys.Key_PageDown) name = "PageDown"
+    else if (key >= qtKeys.Key_F1 && key <= qtKeys.Key_F12) name = "F" + String(key - qtKeys.Key_F1 + 1)
     else if (key === qtKeys.Key_Comma) name = ","
+    else if (key === qtKeys.Key_Period) name = "."
+    else if (key === qtKeys.Key_Slash) name = "/"
     else if (key >= 0x41 && key <= 0x5a) name = String.fromCharCode(key)
     else if (key >= 0x30 && key <= 0x39) name = String.fromCharCode(key)
+  }
+
+  // Ignore bare modifier key presses
+  if (qtKeys && (key === qtKeys.Key_Control || key === qtKeys.Key_Shift || key === qtKeys.Key_Alt || key === qtKeys.Key_Meta)) {
+    return ""
   }
 
   if (!name && text && text.length === 1 && text.charCodeAt(0) >= 32 && text.charCodeAt(0) !== 127) {

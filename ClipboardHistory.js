@@ -268,7 +268,10 @@ function updateEntry(history, id, changes, now) {
   if (!found) return values.slice()
 
   var patch = changes || {}
-  if (patch.text !== undefined) found.text = String(patch.text)
+  if (patch.text !== undefined) {
+    found.text = String(patch.text)
+    if (patch.hash === undefined) found.hash = ""
+  }
   if (patch.path !== undefined) found.path = String(patch.path)
   if (patch.mime !== undefined) found.mime = String(patch.mime)
   if (patch.hash !== undefined) found.hash = String(patch.hash)

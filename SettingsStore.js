@@ -9,7 +9,9 @@ function defaultSettings() {
     },
     editor: {
       vimMode: false,
-      jkExit: true
+      jkExit: true,
+      cursorStyle: "auto",         // "auto" | "line" | "block"
+      fontSize: 14                 // 12 | 14 | 16 | 18
     },
     navigation: {
       wrapSelection: true
@@ -23,7 +25,8 @@ function defaultSettings() {
       languages: "eng"             // "eng" | "amh" | "eng+amh"
     },
     appearance: {
-      backgroundOpacity: 0.94      // 0.65 .. 1.0
+      backgroundOpacity: 0.94,     // 0.65 .. 1.0
+      cornerRadius: 12             // 0 | 8 | 12 | 16
     }
   }
 }
@@ -63,6 +66,13 @@ function parseSettings(raw) {
     if (obj.editor && typeof obj.editor === "object") {
       if (typeof obj.editor.vimMode === "boolean") d.editor.vimMode = obj.editor.vimMode
       if (typeof obj.editor.jkExit === "boolean") d.editor.jkExit = obj.editor.jkExit
+      if (obj.editor.cursorStyle === "auto" || obj.editor.cursorStyle === "line" || obj.editor.cursorStyle === "block") {
+        d.editor.cursorStyle = obj.editor.cursorStyle
+      }
+      if (obj.editor.fontSize !== undefined) {
+        var fs = Number(obj.editor.fontSize)
+        if (isFinite(fs)) d.editor.fontSize = Math.max(10, Math.min(24, Math.floor(fs)))
+      }
     }
     if (obj.navigation && typeof obj.navigation === "object") {
       if (typeof obj.navigation.wrapSelection === "boolean") d.navigation.wrapSelection = obj.navigation.wrapSelection
@@ -80,6 +90,10 @@ function parseSettings(raw) {
     if (obj.appearance && typeof obj.appearance === "object") {
       if (obj.appearance.backgroundOpacity !== undefined) {
         d.appearance.backgroundOpacity = clampOpacity(obj.appearance.backgroundOpacity)
+      }
+      if (obj.appearance.cornerRadius !== undefined) {
+        var cr = Number(obj.appearance.cornerRadius)
+        if (isFinite(cr)) d.appearance.cornerRadius = Math.max(0, Math.min(24, Math.floor(cr)))
       }
     }
     return d

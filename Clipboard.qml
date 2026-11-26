@@ -79,6 +79,10 @@ Item {
   property var settings: SettingsStore.defaultSettings()
   property string settingsPath: Quickshell.env("HOME") + "/.config/omarchy-clipboard/settings.json"
   property bool quickSettingsOpen: false
+  property bool shortcutsHelpOpen: false
+  property string hoverTooltipText: ""
+  property real hoverTooltipX: 0
+  property real hoverTooltipY: 0
   property var installedOcrLangs: []
   property var keybindings: Keybindings.defaultConfig()
   property string keybindingsPath: Quickshell.env("HOME") + "/.config/omarchy-clipboard/keybindings.json"
@@ -91,8 +95,25 @@ Item {
     Key_Escape: Qt.Key_Escape,
     Key_Return: Qt.Key_Return,
     Key_Enter: Qt.Key_Enter,
+    Key_Space: Qt.Key_Space,
+    Key_Left: Qt.Key_Left,
+    Key_Right: Qt.Key_Right,
+    Key_Up: Qt.Key_Up,
+    Key_Down: Qt.Key_Down,
+    Key_Home: Qt.Key_Home,
+    Key_End: Qt.Key_End,
+    Key_PageUp: Qt.Key_PageUp,
+    Key_PageDown: Qt.Key_PageDown,
+    Key_F1: Qt.Key_F1,
     Key_F3: Qt.Key_F3,
-    Key_Comma: Qt.Key_Comma
+    Key_F12: Qt.Key_F12,
+    Key_Comma: Qt.Key_Comma,
+    Key_Period: Qt.Key_Period,
+    Key_Slash: Qt.Key_Slash,
+    Key_Control: Qt.Key_Control,
+    Key_Shift: Qt.Key_Shift,
+    Key_Alt: Qt.Key_Alt,
+    Key_Meta: Qt.Key_Meta
   })
   // Shares the [menu] surface tokens — themes that style the menu also
   // style the clipboard. Selected-row colors composed in the
@@ -104,7 +125,7 @@ Item {
   property color scrim: Commons.Color.menu.scrim
   property color selectedBackground: Commons.Color.menu.selectedBackground
   property color selectedText: Commons.Color.menu.selectedText
-  readonly property int cornerRadius: Style.cornerRadius
+  readonly property int cornerRadius: root.settings.appearance.cornerRadius
   property string fontFamily: Style.font.menuFamily
   property int contentMargin: Style.spacing.panelPadding
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
@@ -142,6 +163,18 @@ Item {
     settingsWindow.opened = true
   }
 
+  function showHoverTooltip(item, text) {
+    if (!item || !text) return
+    var pos = item.mapToItem(card, item.width / 2, item.height)
+    root.hoverTooltipX = Math.max(root.contentMargin, Math.min(card.width - root.contentMargin - Style.space(220), pos.x - Style.space(80)))
+    root.hoverTooltipY = Math.min(card.height - Style.space(34), pos.y + Style.space(6))
+    root.hoverTooltipText = text
+  }
+
+  function hideHoverTooltip() {
+    root.hoverTooltipText = ""
+  }
+
   function open(payloadJson) {
     root.opened = true
     root.filterText = ""
@@ -151,6 +184,8 @@ Item {
     root.activePanel = "list"
     root.listSearchActive = false
     root.quickSettingsOpen = false
+    root.shortcutsHelpOpen = false
+    root.hideHoverTooltip()
     root.clearToast()
     root.disarmPointer()
     root.rebuildDisplay()
@@ -310,7 +345,7 @@ Item {
       root.editorRevision++
       return
     }
-    root.history = ClipboardHistory.updateEntry(root.history, targetId, st.text)
+    root.history = ClipboardHistory.updateEntry(root.history, targetId, { text: st.text })
     st.dirty = false
     root.saveHistory()
     root.rebuildDisplay()
@@ -325,8 +360,9 @@ Item {
   }
 
   function scheduleEditorCommit(immediate) {
+    // Commit edits when leaving the editor, switching entries, or closing
+    // rather than rewriting/reordering history mid-typing.
     if (immediate) root.commitEditorChanges()
-    else editorSaveTimer.restart()
   }
 
   function handleEditorKey(event) {
@@ -389,7 +425,7 @@ Item {
         root.syncTextToClipboard(vRes.yankText, "vim-yank")
         root.showToast(Commons.I18n.t("clipboard.selectionCopied", "Selection copied"), false)
       }
-      if (vRes.mutated) root.scheduleEditorCommit(vRes.commitImmediate)
+      if (vRes.mutated) root.scheduleEditorCommit(false)
       root.editorRevision++
       root.syncEditorView()
       return true
@@ -799,8 +835,10 @@ Item {
     if (!cursorActive) {
       cursorActive = true
       selectedIndex = delta < 0 ? displayModel.count - 1 : 0
-    } else {
+    } else if (root.settings.navigation.wrapSelection) {
       selectedIndex = (selectedIndex + delta + displayModel.count) % displayModel.count
+    } else {
+      selectedIndex = Math.max(0, Math.min(displayModel.count - 1, selectedIndex + delta))
     }
     resultList.positionViewAtIndex(selectedIndex, ListView.Contain)
   }
@@ -861,7 +899,8 @@ Item {
 
   function copySelected(row) {
     if (!row) return
-    root.opened = false
+    if (root.settings.general.closeOnCopy) root.opened = false
+    else root.showToast("Copied to clipboard", false)
     if (row.entryType === "image") {
       Quickshell.execDetached([root.pasteFileScript, "--copy-only", row.mime, row.path])
     } else if (row.fullText) {
@@ -880,9 +919,15 @@ Item {
   // second shell from starting duplicate watchers, so no pkill sweep is
   // needed (and the old sweep killed a healthy sibling instance).
   Component.onCompleted: {
+    ensureConfigDirProc.running = true
     currentProc.running = true
     textWatchProc.running = true
     imageWatchProc.running = true
+  }
+
+  Process {
+    id: ensureConfigDirProc
+    command: ["mkdir", "-p", Quickshell.env("HOME") + "/.config/omarchy-clipboard"]
   }
 
   ListModel { id: displayModel }
@@ -1176,6 +1221,8 @@ Item {
           if (event.key === Qt.Key_Escape) {
             if (root.activePanel === "preview" && root.vimMode && root.vimState.mode !== "normal") {
               root.handleEditorKey(event)
+            } else if (root.shortcutsHelpOpen) {
+              root.shortcutsHelpOpen = false
             } else if (root.quickSettingsOpen) {
               root.quickSettingsOpen = false
             } else if (root.activePanel === "preview" && root.editorSearchOpen) {
@@ -1191,6 +1238,10 @@ Item {
             } else {
               root.close()
             }
+            event.accepted = true
+          } else if (event.key === Qt.Key_F1 || (event.text === "?" && root.activePanel === "list" && !root.listSearchActive)) {
+            root.quickSettingsOpen = false
+            root.shortcutsHelpOpen = !root.shortcutsHelpOpen
             event.accepted = true
           } else if (appAction === "switchTab") {
             root.switchTab(root.activeTab === "history" ? "pinned" : "history")
@@ -1262,6 +1313,11 @@ Item {
             event.accepted = true
           } else if (event.key === Qt.Key_Right && event.modifiers === Qt.NoModifier && !root.filterText && displayModel.count > 0) {
             root.focusPanel("preview")
+            event.accepted = true
+          } else if (event.key === Qt.Key_Left && event.modifiers === Qt.NoModifier && !root.filterText) {
+            var order = ["all", "history", "pinned"]
+            var idx = order.indexOf(root.activeTab)
+            root.switchTab(order[(idx + order.length - 1) % order.length])
             event.accepted = true
           } else if (event.key === Qt.Key_Up) {
             root.select(-1)
@@ -1387,6 +1443,7 @@ Item {
               }
 
               Rectangle {
+                id: ocrHeaderBtn
                 visible: root.ocrEnabled
                 width: Math.max(Style.space(34), root.headerHeight - Style.space(2))
                 height: Math.max(Style.space(34), root.headerHeight - Style.space(2))
@@ -1409,11 +1466,17 @@ Item {
                   anchors.fill: parent
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: root.startOcr(true)
+                  onEntered: root.showHoverTooltip(ocrHeaderBtn, "Screen OCR (" + (root.keybindings.app.startOcr || "Ctrl+O") + ")")
+                  onExited: root.hideHoverTooltip()
+                  onClicked: {
+                    root.hideHoverTooltip()
+                    root.startOcr(true)
+                  }
                 }
               }
 
               Rectangle {
+                id: settingsHeaderBtn
                 width: Math.max(Style.space(34), root.headerHeight - Style.space(2))
                 height: Math.max(Style.space(34), root.headerHeight - Style.space(2))
                 radius: root.cornerRadius
@@ -1435,7 +1498,45 @@ Item {
                   anchors.fill: parent
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: root.quickSettingsOpen = !root.quickSettingsOpen
+                  onEntered: root.showHoverTooltip(settingsHeaderBtn, "Quick Settings (" + (root.keybindings.app.openSettings || "Ctrl+,") + ")")
+                  onExited: root.hideHoverTooltip()
+                  onClicked: {
+                    root.shortcutsHelpOpen = false
+                    root.quickSettingsOpen = !root.quickSettingsOpen
+                  }
+                }
+              }
+
+              Rectangle {
+                id: helpHeaderBtn
+                width: Math.max(Style.space(34), root.headerHeight - Style.space(2))
+                height: Math.max(Style.space(34), root.headerHeight - Style.space(2))
+                radius: root.cornerRadius
+                color: (root.shortcutsHelpOpen || helpBtnMouse.containsMouse) ? root.selectedBackground : "transparent"
+                border.width: (root.shortcutsHelpOpen || helpBtnMouse.containsMouse) ? Style.normalBorderWidth : 0
+                border.color: Util.alpha(root.border, 0.35)
+
+                Text {
+                  anchors.centerIn: parent
+                  text: "?"
+                  color: (root.shortcutsHelpOpen || helpBtnMouse.containsMouse) ? root.selectedText : root.foreground
+                  opacity: (root.shortcutsHelpOpen || helpBtnMouse.containsMouse) ? 1.0 : 0.85
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.space(17)
+                  font.weight: Font.DemiBold
+                }
+
+                MouseArea {
+                  id: helpBtnMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onEntered: root.showHoverTooltip(helpHeaderBtn, "Active Shortcuts (? or F1)")
+                  onExited: root.hideHoverTooltip()
+                  onClicked: {
+                    root.quickSettingsOpen = false
+                    root.shortcutsHelpOpen = !root.shortcutsHelpOpen
+                  }
                 }
               }
             }
@@ -1584,6 +1685,7 @@ Item {
                       spacing: Style.space(4)
 
                       Rectangle {
+                        id: pinActionBtn
                         width: Style.space(30)
                         height: Style.space(30)
                         radius: Math.max(4, root.cornerRadius - 4)
@@ -1603,8 +1705,11 @@ Item {
                           anchors.fill: parent
                           hoverEnabled: true
                           cursorShape: Qt.PointingHandCursor
+                          onEntered: root.showHoverTooltip(pinActionBtn, (row.pinned ? "Unpin" : "Pin") + " (" + (root.keybindings.app.togglePin || "Ctrl+P") + ")")
+                          onExited: root.hideHoverTooltip()
                           onClicked: function(mouse) {
                             mouse.accepted = true
+                            root.hideHoverTooltip()
                             root.cursorActive = true
                             root.selectedIndex = row.index
                             root.togglePinIndex(row.index)
@@ -1613,6 +1718,7 @@ Item {
                       }
 
                       Rectangle {
+                        id: deleteActionBtn
                         visible: row.hasCursor || rowMouse.containsMouse
                         width: Style.space(30)
                         height: Style.space(30)
@@ -1633,8 +1739,11 @@ Item {
                           anchors.fill: parent
                           hoverEnabled: true
                           cursorShape: Qt.PointingHandCursor
+                          onEntered: root.showHoverTooltip(deleteActionBtn, "Delete (" + (root.keybindings.app.deleteEntry || "Delete") + ")")
+                          onExited: root.hideHoverTooltip()
                           onClicked: function(mouse) {
                             mouse.accepted = true
+                            root.hideHoverTooltip()
                             root.cursorActive = true
                             root.selectedIndex = row.index
                             root.removeDisplayIndex(row.index)
@@ -1765,17 +1874,18 @@ Item {
                   selectionColor: root.selectedBackground
                   selectedTextColor: root.selectedText
                   font.family: root.fontFamily
-                  font.pixelSize: Style.font.title
+                  font.pixelSize: root.settings.editor.fontSize
                   verticalAlignment: TextEdit.AlignTop
 
                   Rectangle {
                     id: editorCustomCursor
-                    readonly property bool isBlock: root.vimMode && (!root.vimState || root.vimState.mode !== "insert")
+                    readonly property string styleMode: root.settings.editor.cursorStyle || "auto"
+                    readonly property bool isBlock: styleMode === "block" || (styleMode === "auto" && root.vimMode && (!root.vimState || root.vimState.mode !== "insert"))
                     visible: previewPanel.panelFocused && previewPanel.isTextEditable && (isBlock || root.editorCursorBlinkOn)
                     x: editorTextEdit.cursorRectangle.x
                     y: editorTextEdit.cursorRectangle.y
-                    width: isBlock ? Math.max(Style.space(9), Style.font.title * 0.6) : Math.max(2, Style.space(2))
-                    height: Math.max(Style.font.title + 2, editorTextEdit.cursorRectangle.height)
+                    width: isBlock ? Math.max(Style.space(9), root.settings.editor.fontSize * 0.6) : Math.max(2, Style.space(2))
+                    height: Math.max(root.settings.editor.fontSize + 2, editorTextEdit.cursorRectangle.height)
                     color: root.selectedText
                     opacity: isBlock ? (root.editorCursorBlinkOn ? 0.52 : 0.18) : 1.0
                     z: 2
@@ -1818,7 +1928,7 @@ Item {
                   text: previewPanel.activeRow ? previewPanel.activeRow.fullText : ""
                   color: root.foreground
                   font.family: root.fontFamily
-                  font.pixelSize: Style.font.title
+                  font.pixelSize: root.settings.editor.fontSize
                   wrapMode: Text.WrapAnywhere
                   verticalAlignment: Text.AlignTop
                 }
@@ -2071,6 +2181,124 @@ Item {
               elide: Text.ElideRight
             }
           }
+        }
+      }
+
+      BorderSurface {
+        id: shortcutsHelpCard
+        visible: root.shortcutsHelpOpen
+        anchors.centerIn: parent
+        z: 19
+        width: Math.min(parent.width - Style.space(48), Style.space(520))
+        height: Math.min(parent.height - Style.space(48), helpCol.implicitHeight + Style.space(28))
+        radius: root.cornerRadius
+        color: root.background
+        borderSpec: Border.flat(Util.alpha(root.selectedText, 0.5), Style.normalBorderWidth)
+        padding: Style.space(14)
+
+        MouseArea { anchors.fill: parent; onClicked: {} }
+
+        Column {
+          id: helpCol
+          anchors.fill: parent
+          anchors.margins: Style.space(14)
+          spacing: Style.space(8)
+
+          Row {
+            width: parent.width
+            Text {
+              width: parent.width - closeHelpBtn.width
+              text: "Active Shortcuts (" + (root.vimMode ? "Vim Mode" : "Normal Mode") + ")"
+              color: root.selectedText
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.title
+              font.weight: Font.DemiBold
+            }
+            Rectangle {
+              id: closeHelpBtn
+              width: Style.space(24); height: Style.space(24); radius: Style.space(4)
+              color: Util.alpha(root.foreground, 0.1)
+              Text { anchors.centerIn: parent; text: "✕"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.shortcutsHelpOpen = false }
+            }
+          }
+
+          Repeater {
+            model: {
+              var kb = root.keybindings
+              var list = [
+                { k: kb.global.openClipboard || "Unbound", d: "Global: Open / Toggle Clipboard" },
+                { k: kb.global.ocrExtract || "Unbound", d: "Global: Screen OCR" },
+                { k: kb.app.switchPanel || "Tab", d: "Switch Left List ↔ Right Editor" },
+                { k: "↑ / ↓ / ← / →", d: "Navigate list, switch tabs (←), focus editor (→)" },
+                { k: kb.app.switchTab || "Ctrl+Tab", d: "Next Tab (All / History / Pinned)" },
+                { k: kb.app.togglePin || "Ctrl+P", d: "Pin / Unpin selected entry" },
+                { k: (kb.app.deleteEntry || "Delete") + " / " + (kb.app.undoDelete || "Ctrl+Z"), d: "Delete entry / Undo delete" },
+                { k: kb.app.startOcr || "Ctrl+O", d: "Screen Text Extraction (OCR)" },
+                { k: kb.app.openSettings || "Ctrl+,", d: "Open Advanced Settings" },
+                { k: "Enter / Shift+Enter / Alt+Enter", d: "Paste / Copy only / Open externally" }
+              ]
+              if (root.vimMode) {
+                list.push({ k: "j / k / g / G / l / /", d: "List Vim: Down / Up / Top / Bottom / Editor / Search" })
+                list.push({ k: "i a I A / v V Ctrl+V", d: "Editor Vim: Insert / Visual / Visual Line / Block" })
+                list.push({ k: "h j k l w b e 0 $ gg G", d: "Editor Vim: Motions" })
+                list.push({ k: "dd yy p P x / u Ctrl+R", d: "Editor Vim: Delete / Yank / Paste / Undo / Redo" })
+              } else {
+                list.push({ k: (kb.normal.undo || "Ctrl+Z") + " / " + (kb.normal.redo || "Ctrl+Shift+Z"), d: "Editor: Undo / Redo" })
+                list.push({ k: (kb.normal.copySelection || "Ctrl+C") + " / " + (kb.normal.paste || "Ctrl+V"), d: "Editor: Copy selection / Paste" })
+                list.push({ k: (kb.normal.find || "Ctrl+F") + " / " + (kb.normal.findNext || "F3"), d: "Editor: Find in entry / Next match" })
+              }
+              return list
+            }
+
+            Row {
+              required property var modelData
+              width: parent.width
+              spacing: Style.space(10)
+              Text {
+                width: Style.space(185)
+                textFormat: Text.PlainText
+                text: modelData.k
+                color: root.selectedText
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                elide: Text.ElideRight
+              }
+              Text {
+                width: parent.width - Style.space(195)
+                textFormat: Text.PlainText
+                text: modelData.d
+                color: root.foreground
+                opacity: 0.85
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                elide: Text.ElideRight
+              }
+            }
+          }
+        }
+      }
+
+      BorderSurface {
+        id: hoverTooltipCard
+        visible: root.hoverTooltipText.length > 0
+        x: root.hoverTooltipX
+        y: root.hoverTooltipY
+        z: 25
+        width: hoverTooltipLabel.implicitWidth + Style.space(16)
+        height: Style.space(26)
+        radius: Math.max(4, root.cornerRadius - 4)
+        color: root.background
+        borderSpec: Border.flat(Util.alpha(root.border, 0.5), Style.normalBorderWidth)
+
+        Text {
+          id: hoverTooltipLabel
+          anchors.centerIn: parent
+          textFormat: Text.PlainText
+          text: root.hoverTooltipText
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
         }
       }
 
