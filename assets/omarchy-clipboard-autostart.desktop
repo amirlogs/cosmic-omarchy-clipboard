@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=Omarchy Clipboard Daemon
-Comment=Omarchy Clipboard Daemon for Wayland / COSMIC
+Name=COSMIC Clipboard Daemon
+Comment=COSMIC Clipboard Daemon for Wayland / COSMIC
 Exec=omarchy-clipboard --daemon
 Terminal=false
 Type=Application

@@ -24,12 +24,12 @@ FloatingWindow {
   signal resetDefaults()
   signal manualCleanup(int hours)
   signal cleanupOrphanImages()
-  signal closed()
+  signal windowClosed()
 
   visible: opened
-  title: "Omarchy Clipboard Settings"
-  implicitWidth: Math.min(820, Screen.width - 40)
-  implicitHeight: Math.min(560, Screen.height - 40)
+  title: "COSMIC Clipboard Settings"
+  implicitWidth: Math.min(900, Screen.width - 40)
+  implicitHeight: Math.min(640, Screen.height - 40)
   color: "transparent"
 
   onVisibleChanged: {
@@ -37,7 +37,7 @@ FloatingWindow {
       opened = false
       recordingScope = ""
       recordingAction = ""
-      closed()
+      windowClosed()
     }
   }
 
@@ -127,36 +127,36 @@ FloatingWindow {
 
       // Sidebar
       Column {
-        width: Style.space(195)
+        width: Style.space(220)
         height: parent.height
-        spacing: Style.space(6)
+        spacing: Style.space(8)
 
         Text {
           textFormat: Text.PlainText
           text: "Settings"
           color: Commons.Color.menu.text
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.heading
+          font.pixelSize: Style.space(20)
           font.weight: Font.DemiBold
         }
 
         Rectangle {
           width: parent.width
-          height: Style.space(30)
+          height: Style.space(36)
           radius: Style.cornerRadius
           color: Util.alpha(Commons.Color.menu.text, 0.08)
 
           Text {
             anchors.fill: parent
-            anchors.leftMargin: Style.space(10)
-            anchors.rightMargin: Style.space(10)
+            anchors.leftMargin: Style.space(12)
+            anchors.rightMargin: Style.space(12)
             verticalAlignment: Text.AlignVCenter
             textFormat: Text.PlainText
             text: win.searchQuery || "Search settings…"
             color: Commons.Color.menu.text
             opacity: win.searchQuery ? 1.0 : 0.55
             font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.bodySmall
+            font.pixelSize: Style.font.title
             elide: Text.ElideRight
           }
         }
@@ -168,19 +168,19 @@ FloatingWindow {
             required property var modelData
             readonly property bool active: !win.searchQuery && win.activeCategory === modelData.key
             width: parent.width
-            height: Style.space(32)
+            height: Style.space(38)
             radius: Style.cornerRadius
             color: active ? Commons.Color.menu.selectedBackground : "transparent"
 
             Text {
               anchors.verticalCenter: parent.verticalCenter
               anchors.left: parent.left
-              anchors.leftMargin: Style.space(10)
+              anchors.leftMargin: Style.space(12)
               textFormat: Text.PlainText
               text: modelData.label
               color: active ? Commons.Color.menu.selectedText : Commons.Color.menu.text
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.body
+              font.pixelSize: Style.font.title
             }
 
             MouseArea {
@@ -198,7 +198,7 @@ FloatingWindow {
 
         Rectangle {
           width: parent.width
-          height: Style.space(30)
+          height: Style.space(36)
           radius: Style.cornerRadius
           color: resetMouse.containsMouse ? Util.alpha(Commons.Color.urgent, 0.25) : Util.alpha(Commons.Color.menu.text, 0.08)
 
@@ -208,7 +208,7 @@ FloatingWindow {
             text: "Reset to Defaults"
             color: Commons.Color.menu.text
             font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.bodySmall
+            font.pixelSize: Style.font.title
           }
 
           MouseArea {
@@ -229,7 +229,7 @@ FloatingWindow {
 
       // Content pane
       Flickable {
-        width: parent.width - Style.space(220)
+        width: parent.width - Style.space(250)
         height: parent.height
         clip: true
         contentWidth: width
@@ -247,19 +247,19 @@ FloatingWindow {
             width: parent.width
             spacing: Style.space(10)
 
-            Text { text: "General"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title; font.weight: Font.DemiBold }
+            Text { text: "General"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading; font.weight: Font.DemiBold }
 
             Row {
               spacing: Style.space(8)
-              Text { anchors.verticalCenter: parent.verticalCenter; text: "Default Tab:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.body }
+              Text { anchors.verticalCenter: parent.verticalCenter; text: "Default Tab:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
               Repeater {
                 model: ["history", "pinned", "all"]
                 Rectangle {
                   required property string modelData
                   readonly property bool on: win.settings.general.defaultTab === modelData
-                  width: dtLbl.implicitWidth + Style.space(14); height: Style.space(26); radius: Style.cornerRadius
+                  width: dtLbl.implicitWidth + Style.space(14); height: Style.space(34); radius: Style.cornerRadius
                   color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: dtLbl; anchors.centerIn: parent; text: modelData; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.bodySmall }
+                  Text { id: dtLbl; anchors.centerIn: parent; text: modelData; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
                   MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.general.defaultTab = modelData }) }
                 }
               }
@@ -272,14 +272,14 @@ FloatingWindow {
             width: parent.width
             spacing: Style.space(10)
 
-            Text { text: "Keyboard & Shortcuts"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title; font.weight: Font.DemiBold }
+            Text { text: "Keyboard & Shortcuts"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading; font.weight: Font.DemiBold }
 
             Text {
               visible: win.keyConflicts.length > 0
               text: "Conflict detected: " + (win.keyConflicts.length > 0 ? (win.keyConflicts[0].combo + " (" + win.keyConflicts[0].actionA + " vs " + win.keyConflicts[0].actionB + ")") : "")
               color: Commons.Color.urgent
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.bodySmall
+              font.pixelSize: Style.font.heading
               wrapMode: Text.WordWrap
               width: parent.width
             }
@@ -303,7 +303,7 @@ FloatingWindow {
               Row {
                 required property var modelData
                 width: parent.width
-                height: Style.space(28)
+                height: Style.space(34)
                 spacing: Style.space(10)
 
                 Text {
@@ -313,14 +313,14 @@ FloatingWindow {
                   text: modelData.label
                   color: Commons.Color.menu.text
                   font.family: Style.font.menuFamily
-                  font.pixelSize: Style.font.bodySmall
+                  font.pixelSize: Style.font.heading
                   elide: Text.ElideRight
                 }
 
                 Rectangle {
                   readonly property bool recording: win.recordingScope === modelData.scope && win.recordingAction === modelData.action
                   width: Style.space(135)
-                  height: Style.space(24)
+                  height: Style.space(32)
                   radius: Style.cornerRadius
                   color: recording ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
 
@@ -332,7 +332,7 @@ FloatingWindow {
                       : ((win.keybindings[modelData.scope] && win.keybindings[modelData.scope][modelData.action]) || "Unbound")
                     color: parent.recording ? Commons.Color.menu.selectedText : Commons.Color.menu.text
                     font.family: Style.font.menuFamily
-                    font.pixelSize: Style.font.caption
+                    font.pixelSize: Style.font.subtitle
                   }
 
                   MouseArea {
@@ -355,19 +355,19 @@ FloatingWindow {
             width: parent.width
             spacing: Style.space(10)
 
-            Text { text: "Editor"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title; font.weight: Font.DemiBold }
+            Text { text: "Editor"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading; font.weight: Font.DemiBold }
 
             Rectangle {
-              width: vimLbl.implicitWidth + Style.space(20); height: Style.space(28); radius: Style.cornerRadius
+              width: vimLbl.implicitWidth + Style.space(20); height: Style.space(34); radius: Style.cornerRadius
               color: win.settings.editor.vimMode ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-              Text { id: vimLbl; anchors.centerIn: parent; text: "Vim Mode: " + (win.settings.editor.vimMode ? "Enabled" : "Disabled"); color: win.settings.editor.vimMode ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.bodySmall }
+              Text { id: vimLbl; anchors.centerIn: parent; text: "Vim Mode: " + (win.settings.editor.vimMode ? "Enabled" : "Disabled"); color: win.settings.editor.vimMode ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
               MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.editor.vimMode = !s.editor.vimMode }) }
             }
 
             Rectangle {
-              width: jkLbl.implicitWidth + Style.space(20); height: Style.space(28); radius: Style.cornerRadius
+              width: jkLbl.implicitWidth + Style.space(20); height: Style.space(34); radius: Style.cornerRadius
               color: win.settings.editor.jkExit ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-              Text { id: jkLbl; anchors.centerIn: parent; text: "Vim 'jk' Insert Exit: " + (win.settings.editor.jkExit ? "Enabled" : "Disabled"); color: win.settings.editor.jkExit ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.bodySmall }
+              Text { id: jkLbl; anchors.centerIn: parent; text: "Vim 'jk' Insert Exit: " + (win.settings.editor.jkExit ? "Enabled" : "Disabled"); color: win.settings.editor.jkExit ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
               MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.editor.jkExit = !s.editor.jkExit }) }
             }
           }
@@ -378,12 +378,12 @@ FloatingWindow {
             width: parent.width
             spacing: Style.space(10)
 
-            Text { text: "Navigation"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title; font.weight: Font.DemiBold }
+            Text { text: "Navigation"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading; font.weight: Font.DemiBold }
 
             Rectangle {
-              width: wrapLbl.implicitWidth + Style.space(20); height: Style.space(28); radius: Style.cornerRadius
+              width: wrapLbl.implicitWidth + Style.space(20); height: Style.space(34); radius: Style.cornerRadius
               color: win.settings.navigation.wrapSelection ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-              Text { id: wrapLbl; anchors.centerIn: parent; text: "Wrap List Selection: " + (win.settings.navigation.wrapSelection ? "On" : "Off"); color: win.settings.navigation.wrapSelection ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.bodySmall }
+              Text { id: wrapLbl; anchors.centerIn: parent; text: "Wrap List Selection: " + (win.settings.navigation.wrapSelection ? "On" : "Off"); color: win.settings.navigation.wrapSelection ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
               MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.navigation.wrapSelection = !s.navigation.wrapSelection }) }
             }
           }
@@ -394,9 +394,9 @@ FloatingWindow {
             width: parent.width
             spacing: Style.space(10)
 
-            Text { text: "Clipboard & Retention"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title; font.weight: Font.DemiBold }
+            Text { text: "Clipboard & Retention"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading; font.weight: Font.DemiBold }
 
-            Text { text: "Maximum History Size (pinned entries excluded):"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.bodySmall }
+            Text { text: "Maximum History Size (pinned entries excluded):"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
             Row {
               spacing: Style.space(6)
               Repeater {
@@ -410,15 +410,15 @@ FloatingWindow {
                 Rectangle {
                   required property var modelData
                   readonly property bool on: win.settings.clipboard.historyLimit === modelData.val
-                  width: limLbl.implicitWidth + Style.space(14); height: Style.space(26); radius: Style.cornerRadius
+                  width: limLbl.implicitWidth + Style.space(14); height: Style.space(34); radius: Style.cornerRadius
                   color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: limLbl; anchors.centerIn: parent; text: modelData.label; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.caption }
+                  Text { id: limLbl; anchors.centerIn: parent; text: modelData.label; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.subtitle }
                   MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.clipboard.historyLimit = modelData.val }) }
                 }
               }
             }
 
-            Text { text: "Automatic Age Cleanup (pinned entries protected):"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.bodySmall }
+            Text { text: "Automatic Age Cleanup (pinned entries protected):"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
             Row {
               spacing: Style.space(6)
               Repeater {
@@ -432,15 +432,15 @@ FloatingWindow {
                 Rectangle {
                   required property var modelData
                   readonly property bool on: win.settings.clipboard.autoCleanupHours === modelData.val
-                  width: ageLbl.implicitWidth + Style.space(14); height: Style.space(26); radius: Style.cornerRadius
+                  width: ageLbl.implicitWidth + Style.space(14); height: Style.space(34); radius: Style.cornerRadius
                   color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: ageLbl; anchors.centerIn: parent; text: modelData.label; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.caption }
+                  Text { id: ageLbl; anchors.centerIn: parent; text: modelData.label; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.subtitle }
                   MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.clipboard.autoCleanupHours = modelData.val }) }
                 }
               }
             }
 
-            Text { text: "Manual Cleanup:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.bodySmall }
+            Text { text: "Manual Cleanup:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
             Row {
               spacing: Style.space(6)
               Repeater {
@@ -451,16 +451,16 @@ FloatingWindow {
                 ]
                 Rectangle {
                   required property var modelData
-                  width: mcLbl.implicitWidth + Style.space(14); height: Style.space(26); radius: Style.cornerRadius
+                  width: mcLbl.implicitWidth + Style.space(14); height: Style.space(34); radius: Style.cornerRadius
                   color: Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: mcLbl; anchors.centerIn: parent; text: modelData.label; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.caption }
+                  Text { id: mcLbl; anchors.centerIn: parent; text: modelData.label; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.subtitle }
                   MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.manualCleanup(modelData.hrs) }
                 }
               }
               Rectangle {
-                width: gcLbl.implicitWidth + Style.space(14); height: Style.space(26); radius: Style.cornerRadius
+                width: gcLbl.implicitWidth + Style.space(14); height: Style.space(34); radius: Style.cornerRadius
                 color: Util.alpha(Commons.Color.menu.text, 0.08)
-                Text { id: gcLbl; anchors.centerIn: parent; text: "Clean Orphan Images"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.caption }
+                Text { id: gcLbl; anchors.centerIn: parent; text: "Clean Orphan Images"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.subtitle }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.cleanupOrphanImages() }
               }
             }
@@ -472,12 +472,12 @@ FloatingWindow {
             width: parent.width
             spacing: Style.space(10)
 
-            Text { text: "OCR (Screen Text Extraction)"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title; font.weight: Font.DemiBold }
+            Text { text: "OCR (Screen Text Extraction)"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading; font.weight: Font.DemiBold }
 
             Rectangle {
-              width: ocrEnLbl.implicitWidth + Style.space(20); height: Style.space(28); radius: Style.cornerRadius
+              width: ocrEnLbl.implicitWidth + Style.space(20); height: Style.space(34); radius: Style.cornerRadius
               color: win.settings.ocr.enabled ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-              Text { id: ocrEnLbl; anchors.centerIn: parent; text: "OCR: " + (win.settings.ocr.enabled ? "Enabled" : "Disabled"); color: win.settings.ocr.enabled ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.bodySmall }
+              Text { id: ocrEnLbl; anchors.centerIn: parent; text: "OCR: " + (win.settings.ocr.enabled ? "Enabled" : "Disabled"); color: win.settings.ocr.enabled ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
               MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.ocr.enabled = !s.ocr.enabled }) }
             }
 
@@ -492,9 +492,9 @@ FloatingWindow {
                 Rectangle {
                   required property var modelData
                   readonly property bool on: win.settings.ocr.languages === modelData.val
-                  width: olLbl.implicitWidth + Style.space(14); height: Style.space(26); radius: Style.cornerRadius
+                  width: olLbl.implicitWidth + Style.space(14); height: Style.space(34); radius: Style.cornerRadius
                   color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: olLbl; anchors.centerIn: parent; text: modelData.label; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.caption }
+                  Text { id: olLbl; anchors.centerIn: parent; text: modelData.label; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.subtitle }
                   MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.ocr.languages = modelData.val }) }
                 }
               }
@@ -507,7 +507,7 @@ FloatingWindow {
               color: !win.hasLang("amh") && win.settings.ocr.languages.indexOf("amh") >= 0 ? Commons.Color.warning : Commons.Color.menu.text
               opacity: 0.78
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.subtitle
               wrapMode: Text.WordWrap
               width: parent.width
             }
@@ -519,9 +519,9 @@ FloatingWindow {
             width: parent.width
             spacing: Style.space(10)
 
-            Text { text: "Appearance"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.title; font.weight: Font.DemiBold }
+            Text { text: "Appearance"; color: Commons.Color.menu.selectedText; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading; font.weight: Font.DemiBold }
 
-            Text { text: "Overlay Background Opacity:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.bodySmall }
+            Text { text: "Overlay Background Opacity:"; color: Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.heading }
             Row {
               spacing: Style.space(6)
               Repeater {
@@ -529,9 +529,9 @@ FloatingWindow {
                 Rectangle {
                   required property real modelData
                   readonly property bool on: Math.abs(win.settings.appearance.backgroundOpacity - modelData) < 0.01
-                  width: opLbl.implicitWidth + Style.space(14); height: Style.space(26); radius: Style.cornerRadius
+                  width: opLbl.implicitWidth + Style.space(14); height: Style.space(34); radius: Style.cornerRadius
                   color: on ? Commons.Color.menu.selectedBackground : Util.alpha(Commons.Color.menu.text, 0.08)
-                  Text { id: opLbl; anchors.centerIn: parent; text: Math.round(modelData * 100) + "%"; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.caption }
+                  Text { id: opLbl; anchors.centerIn: parent; text: Math.round(modelData * 100) + "%"; color: on ? Commons.Color.menu.selectedText : Commons.Color.menu.text; font.family: Style.font.menuFamily; font.pixelSize: Style.font.subtitle }
                   MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.mutateSetting(function(s) { s.appearance.backgroundOpacity = modelData }) }
                 }
               }

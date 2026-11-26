@@ -42,6 +42,9 @@ Item {
   property var vimState: VimEngine.createVimState({ jkExit: root.settings.editor.jkExit })
   property bool vimMode: root.settings.editor.vimMode
   property int editorRevision: 0
+  property int displayRevision: 0
+  property bool listSearchActive: false
+  property bool editorCursorBlinkOn: true
   property bool editorSearchOpen: false
   property string editorSearchQuery: ""
   property bool _syncingEditor: false
@@ -146,6 +149,7 @@ Item {
     root.cursorActive = true
     root.activeTab = root.settings.general.defaultTab || "history"
     root.activePanel = "list"
+    root.listSearchActive = false
     root.quickSettingsOpen = false
     root.clearToast()
     root.disarmPointer()
@@ -201,22 +205,28 @@ Item {
   }
 
   function isEditableActiveRow() {
-    var row = previewPanel.activeRow
+    var row = displayModel.count > 0 && root.selectedIndex >= 0 && root.selectedIndex < displayModel.count
+      ? displayModel.get(root.selectedIndex)
+      : null
     return !!row && !row.previewImage && row.entryType === "text"
   }
 
   function loadEditorFromActiveRow(forceReset) {
-    var row = previewPanel.activeRow
+    var row = displayModel.count > 0 && root.selectedIndex >= 0 && root.selectedIndex < displayModel.count
+      ? displayModel.get(root.selectedIndex)
+      : null
     if (!row || row.previewImage || row.entryType !== "text") {
       if (root.editorState.entryId !== "" || forceReset) {
         root.editorState = EditorEngine.createState("", "")
         root.editorSearchOpen = false
         root.editorSearchQuery = ""
         root.editorRevision++
+        root.syncEditorView()
       }
       return
     }
     if (!forceReset && root.editorState && root.editorState.entryId === row.id) {
+      root.syncEditorView()
       return
     }
     var fullEntryText = row.fullText
@@ -247,6 +257,8 @@ Item {
     if (a !== c) editorTextEdit.select(a, c)
     else editorTextEdit.cursorPosition = c
     root._syncingEditor = false
+    root.editorCursorBlinkOn = true
+    cursorBlinkTimer.restart()
     root.ensureEditorCursorVisible()
   }
 
@@ -765,6 +777,7 @@ Item {
     else if (selectedIndex >= displayModel.count) selectedIndex = displayModel.count - 1
     else if (selectedIndex < 0) selectedIndex = 0
 
+    root.displayRevision++
     root.loadEditorFromActiveRow(false)
     root.probeActiveImageDimensions()
 
@@ -944,6 +957,14 @@ Item {
     interval: 350
     repeat: false
     onTriggered: root.commitEditorChanges()
+  }
+
+  Timer {
+    id: cursorBlinkTimer
+    interval: 530
+    repeat: true
+    running: root.opened && root.activePanel === "preview" && root.isEditableActiveRow()
+    onTriggered: root.editorCursorBlinkOn = !root.editorCursorBlinkOn
   }
 
   FileView {
@@ -1164,6 +1185,9 @@ Item {
               root.focusPanel("list")
             } else if (root.filterText) {
               root.setFilter("")
+              root.listSearchActive = false
+            } else if (root.listSearchActive) {
+              root.listSearchActive = false
             } else {
               root.close()
             }
@@ -1195,6 +1219,38 @@ Item {
           } else if (appAction === "undoDelete") {
             if (root.pendingUndo) root.undoDelete()
             event.accepted = true
+          } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_J) {
+            root.select(1)
+            event.accepted = true
+          } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_K) {
+            root.select(-1)
+            event.accepted = true
+          } else if (root.vimMode && !root.listSearchActive && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier))) {
+            if (event.text === "j") {
+              root.select(1)
+              event.accepted = true
+            } else if (event.text === "k") {
+              root.select(-1)
+              event.accepted = true
+            } else if (event.text === "g") {
+              root.selectAbsolute(0)
+              event.accepted = true
+            } else if (event.text === "G") {
+              root.selectAbsolute(displayModel.count - 1)
+              event.accepted = true
+            } else if (event.text === "l" && displayModel.count > 0) {
+              root.focusPanel("preview")
+              event.accepted = true
+            } else if (event.text === "/" || event.text === "i") {
+              root.listSearchActive = true
+              event.accepted = true
+            } else if (event.text === "p" && root.cursorActive) {
+              root.togglePinIndex(root.selectedIndex)
+              event.accepted = true
+            } else if (event.text === "d" && root.cursorActive) {
+              root.removeDisplayIndex(root.selectedIndex)
+              event.accepted = true
+            }
           } else if (Util.editsFilter(event, root.filterText)) {
             root.setFilter(Util.editedFilter(event, root.filterText))
             event.accepted = true
@@ -1332,8 +1388,8 @@ Item {
 
               Rectangle {
                 visible: root.ocrEnabled
-                width: Math.max(Style.space(28), root.headerHeight - Style.space(4))
-                height: Math.max(Style.space(28), root.headerHeight - Style.space(4))
+                width: Math.max(Style.space(34), root.headerHeight - Style.space(2))
+                height: Math.max(Style.space(34), root.headerHeight - Style.space(2))
                 radius: root.cornerRadius
                 color: ocrBtnMouse.containsMouse ? root.selectedBackground : "transparent"
                 border.width: ocrBtnMouse.containsMouse ? Style.normalBorderWidth : 0
@@ -1343,9 +1399,9 @@ Item {
                   anchors.centerIn: parent
                   text: "󰈭"
                   color: ocrBtnMouse.containsMouse ? root.selectedText : root.foreground
-                  opacity: ocrBtnMouse.containsMouse ? 1.0 : 0.72
+                  opacity: ocrBtnMouse.containsMouse ? 1.0 : 0.8
                   font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
+                  font.pixelSize: Style.space(18)
                 }
 
                 MouseArea {
@@ -1358,8 +1414,8 @@ Item {
               }
 
               Rectangle {
-                width: Math.max(Style.space(28), root.headerHeight - Style.space(4))
-                height: Math.max(Style.space(28), root.headerHeight - Style.space(4))
+                width: Math.max(Style.space(34), root.headerHeight - Style.space(2))
+                height: Math.max(Style.space(34), root.headerHeight - Style.space(2))
                 radius: root.cornerRadius
                 color: (root.quickSettingsOpen || settingsBtnMouse.containsMouse) ? root.selectedBackground : "transparent"
                 border.width: (root.quickSettingsOpen || settingsBtnMouse.containsMouse) ? Style.normalBorderWidth : 0
@@ -1369,9 +1425,9 @@ Item {
                   anchors.centerIn: parent
                   text: "󰒓"
                   color: (root.quickSettingsOpen || settingsBtnMouse.containsMouse) ? root.selectedText : root.foreground
-                  opacity: (root.quickSettingsOpen || settingsBtnMouse.containsMouse) ? 1.0 : 0.72
+                  opacity: (root.quickSettingsOpen || settingsBtnMouse.containsMouse) ? 1.0 : 0.8
                   font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
+                  font.pixelSize: Style.space(18)
                 }
 
                 MouseArea {
@@ -1528,8 +1584,8 @@ Item {
                       spacing: Style.space(4)
 
                       Rectangle {
-                        width: Style.space(26)
-                        height: Style.space(26)
+                        width: Style.space(30)
+                        height: Style.space(30)
                         radius: Math.max(4, root.cornerRadius - 4)
                         color: pinActionMouse.containsMouse ? Util.alpha(root.foreground, 0.14) : "transparent"
 
@@ -1537,9 +1593,9 @@ Item {
                           anchors.centerIn: parent
                           text: row.pinned ? "󰐃" : "󰐄"
                           color: row.pinned ? root.selectedText : root.foreground
-                          opacity: row.pinned ? 1.0 : 0.72
+                          opacity: row.pinned ? 1.0 : 0.78
                           font.family: root.fontFamily
-                          font.pixelSize: Style.font.body
+                          font.pixelSize: Style.space(17)
                         }
 
                         MouseArea {
@@ -1558,8 +1614,8 @@ Item {
 
                       Rectangle {
                         visible: row.hasCursor || rowMouse.containsMouse
-                        width: Style.space(26)
-                        height: Style.space(26)
+                        width: Style.space(30)
+                        height: Style.space(30)
                         radius: Math.max(4, root.cornerRadius - 4)
                         color: deleteActionMouse.containsMouse ? Util.alpha(root.foreground, 0.14) : "transparent"
 
@@ -1567,9 +1623,9 @@ Item {
                           anchors.centerIn: parent
                           text: "󰆴"
                           color: root.foreground
-                          opacity: 0.72
+                          opacity: 0.78
                           font.family: root.fontFamily
-                          font.pixelSize: Style.font.body
+                          font.pixelSize: Style.space(17)
                         }
 
                         MouseArea {
@@ -1597,7 +1653,12 @@ Item {
               height: parent.height
               clip: true
 
-              property var activeRow: displayModel.count > 0 && root.selectedIndex >= 0 && root.selectedIndex < displayModel.count ? displayModel.get(root.selectedIndex) : null
+              property var activeRow: {
+                var _rev = root.displayRevision
+                return displayModel.count > 0 && root.selectedIndex >= 0 && root.selectedIndex < displayModel.count
+                  ? displayModel.get(root.selectedIndex)
+                  : null
+              }
               readonly property bool panelFocused: root.activePanel === "preview"
               readonly property bool isTextEditable: !!activeRow && !activeRow.previewImage && activeRow.entryType === "text"
 
@@ -1693,11 +1754,12 @@ Item {
                   id: editorTextEdit
                   visible: previewPanel.isTextEditable
                   width: previewFlickable.width
+                  height: Math.max(previewFlickable.height, implicitHeight)
                   textFormat: TextEdit.PlainText
                   readOnly: true
                   activeFocusOnPress: false
                   selectByMouse: true
-                  cursorVisible: previewPanel.panelFocused
+                  cursorVisible: false
                   wrapMode: TextEdit.WrapAnywhere
                   color: root.foreground
                   selectionColor: root.selectedBackground
@@ -1705,6 +1767,19 @@ Item {
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.title
                   verticalAlignment: TextEdit.AlignTop
+
+                  Rectangle {
+                    id: editorCustomCursor
+                    readonly property bool isBlock: root.vimMode && (!root.vimState || root.vimState.mode !== "insert")
+                    visible: previewPanel.panelFocused && previewPanel.isTextEditable && (isBlock || root.editorCursorBlinkOn)
+                    x: editorTextEdit.cursorRectangle.x
+                    y: editorTextEdit.cursorRectangle.y
+                    width: isBlock ? Math.max(Style.space(9), Style.font.title * 0.6) : Math.max(2, Style.space(2))
+                    height: Math.max(Style.font.title + 2, editorTextEdit.cursorRectangle.height)
+                    color: root.selectedText
+                    opacity: isBlock ? (root.editorCursorBlinkOn ? 0.52 : 0.18) : 1.0
+                    z: 2
+                  }
 
                   onCursorPositionChanged: {
                     if (root._syncingEditor || !previewPanel.isTextEditable) return
@@ -1716,6 +1791,8 @@ Item {
                     } else {
                       EditorEngine.setCursor(st, cursorPosition, false)
                     }
+                    root.editorCursorBlinkOn = true
+                    cursorBlinkTimer.restart()
                     root.editorRevision++
                   }
 
@@ -1726,6 +1803,8 @@ Item {
                     if (selectionStart !== selectionEnd) {
                       var a = cursorPosition === selectionEnd ? selectionStart : selectionEnd
                       EditorEngine.setSelection(st, a, cursorPosition)
+                      root.editorCursorBlinkOn = true
+                      cursorBlinkTimer.restart()
                       root.editorRevision++
                     }
                   }

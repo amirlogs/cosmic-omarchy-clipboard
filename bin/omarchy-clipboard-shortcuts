@@ -22,9 +22,9 @@ with open(kb_path, "r") as f:
 
 g = kb.get("global", {})
 actions = [
-    ("Omarchy Clipboard", g.get("openClipboard", "Super+V"), f"{bin_path} toggle"),
-    ("Omarchy Clipboard OCR", g.get("ocrExtract", "Super+Shift+S"), f"{bin_path} ocr"),
-    ("Omarchy Clipboard + OCR", g.get("clipboardAndOcr", ""), f"{bin_path} open-ocr"),
+    ("COSMIC Clipboard", g.get("openClipboard", "Super+V"), f"{bin_path} toggle"),
+    ("COSMIC Clipboard OCR", g.get("ocrExtract", "Super+Shift+S"), f"{bin_path} ocr"),
+    ("COSMIC Clipboard + OCR", g.get("clipboardAndOcr", ""), f"{bin_path} open-ocr"),
 ]
 
 with open(shortcuts_path, "r") as f:

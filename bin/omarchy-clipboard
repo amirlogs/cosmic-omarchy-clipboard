@@ -25,12 +25,8 @@ running() {
   quickshell ipc -p "$CONFIG_FILE" call clipboard status >/dev/null 2>&1
 }
 
-# Start the daemon under an exclusive lock. If another instance already holds
-# the lock this exits immediately, so a race between autostart and a keypress
-# can never produce two shells (and two capture watchers).
 start_daemon_bg() {
-  setsid flock -n "$LOCK_FILE" quickshell -p "$CONFIG_FILE" \
-    >/dev/null 2>&1 </dev/null &
+  quickshell -n -d -p "$CONFIG_FILE" >/dev/null 2>&1 </dev/null
 }
 
 wait_for_daemon() {
@@ -43,7 +39,7 @@ wait_for_daemon() {
 
 case "$ACTION" in
   --daemon|daemon)
-    exec flock -n "$LOCK_FILE" quickshell -p "$CONFIG_FILE"
+    exec quickshell -n -p "$CONFIG_FILE"
     ;;
   status)
     if running; then
