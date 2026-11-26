@@ -9,6 +9,7 @@ import "ClipboardHistory.js" as ClipboardHistory
 import "EditorEngine.js" as EditorEngine
 import "VimEngine.js" as VimEngine
 import "Keybindings.js" as Keybindings
+import "SettingsStore.js" as SettingsStore
 
 Item {
   id: root
@@ -38,8 +39,8 @@ Item {
   property string toastText: ""
   property bool toastCanUndo: false
   property var editorState: EditorEngine.createState("", "")
-  property var vimState: VimEngine.createVimState()
-  property bool vimMode: false
+  property var vimState: VimEngine.createVimState({ jkExit: root.settings.editor.jkExit })
+  property bool vimMode: root.settings.editor.vimMode
   property int editorRevision: 0
   property bool editorSearchOpen: false
   property string editorSearchQuery: ""
@@ -65,13 +66,17 @@ Item {
   property string ocrScript: pluginPath + "/bin/omarchy-clipboard-ocr"
   property string saveImageScript: pluginPath + "/bin/omarchy-clipboard-save-image"
   property string cleanupImagesScript: pluginPath + "/bin/omarchy-clipboard-cleanup-images"
-  property int autoCleanupHours: 0
+  property int autoCleanupHours: root.settings.clipboard.autoCleanupHours
   property var imageDimensionsMap: ({})
   property int imageMetaRevision: 0
-  property string ocrLanguages: "eng"
-  property bool ocrEnabled: true
+  property string ocrLanguages: root.settings.ocr.languages
+  property bool ocrEnabled: root.settings.ocr.enabled
   property bool ocrReopenAfter: false
   property string editorSyncTmpPath: Quickshell.env("HOME") + "/.local/state/omarchy/clipboard-editor-sync.tmp"
+  property var settings: SettingsStore.defaultSettings()
+  property string settingsPath: Quickshell.env("HOME") + "/.config/omarchy-clipboard/settings.json"
+  property bool quickSettingsOpen: false
+  property var installedOcrLangs: []
   property var keybindings: Keybindings.defaultConfig()
   property string keybindingsPath: Quickshell.env("HOME") + "/.config/omarchy-clipboard/keybindings.json"
   property string shortcutsSyncScript: pluginPath + "/bin/omarchy-clipboard-shortcuts"
@@ -104,15 +109,44 @@ Item {
   property int cardWidth: Math.min(Style.space(875), panel.width - Style.gapsOut * 2)
   property int cardHeight: Math.min(Style.space(600), panel.height - Style.gapsOut * 2)
   property int rowHeight: Math.max(Style.space(50), Style.font.body + Style.font.caption + Style.spacing.rowPaddingX * 2)
-  property int historyLimit: 500
+  property int historyLimit: root.settings.clipboard.historyLimit
+
+  function applySettings(nextSettings) {
+    root.settings = SettingsStore.parseSettings(nextSettings)
+    root.vimState.jkExit = root.settings.editor.jkExit
+    settingsFile.setText(SettingsStore.serializeSettings(root.settings))
+    root.editorRevision++
+  }
+
+  function applyKeybindings(nextKb) {
+    root.keybindings = Keybindings.parseConfig(nextKb)
+    keybindingsFile.setText(Keybindings.serializeConfig(root.keybindings))
+    shortcutsSyncProc.running = false
+    shortcutsSyncProc.running = true
+  }
+
+  function resetAllDefaults() {
+    root.applySettings(SettingsStore.defaultSettings())
+    root.applyKeybindings(Keybindings.defaultConfig())
+    root.showToast("Settings reset to defaults", false)
+  }
+
+  function openAdvancedSettings() {
+    root.quickSettingsOpen = false
+    root.close()
+    ocrLangsProc.running = false
+    ocrLangsProc.running = true
+    settingsWindow.opened = true
+  }
 
   function open(payloadJson) {
     root.opened = true
     root.filterText = ""
     root.selectedIndex = 0
     root.cursorActive = true
-    root.activeTab = "history"
+    root.activeTab = root.settings.general.defaultTab || "history"
     root.activePanel = "list"
+    root.quickSettingsOpen = false
     root.clearToast()
     root.disarmPointer()
     root.rebuildDisplay()
@@ -931,6 +965,53 @@ Item {
     onFileChanged: reload()
   }
 
+  FileView {
+    id: settingsFile
+    path: root.settingsPath
+    watchChanges: true
+    atomicWrites: true
+    printErrors: false
+    onLoaded: {
+      root.settings = SettingsStore.parseSettings(text())
+      root.vimState.jkExit = root.settings.editor.jkExit
+    }
+    onLoadFailed: root.settings = SettingsStore.defaultSettings()
+    onFileChanged: reload()
+  }
+
+  Process {
+    id: ocrLangsProc
+    command: [root.ocrScript, "--check-langs"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var lines = String(text || "").split(/\r?\n/).map(function(s) { return s.trim() }).filter(Boolean)
+        root.installedOcrLangs = lines
+      }
+    }
+  }
+
+  Process {
+    id: shortcutsSyncProc
+    command: [root.shortcutsSyncScript]
+  }
+
+  SettingsWindow {
+    id: settingsWindow
+    settings: root.settings
+    keybindings: root.keybindings
+    installedOcrLangs: root.installedOcrLangs
+    onUpdateSettings: function(next) { root.applySettings(next) }
+    onUpdateKeybindings: function(next) { root.applyKeybindings(next) }
+    onResetDefaults: root.resetAllDefaults()
+    onManualCleanup: function(hours) { root.pruneOlderThanHours(hours) }
+    onCleanupOrphanImages: {
+      cleanupImagesProc.running = false
+      cleanupImagesProc.running = true
+      root.showToast("Cleaned orphan images", false)
+    }
+  }
+
   Process {
     id: writeTextProc
     property string sourceName: "editor"
@@ -1049,7 +1130,7 @@ Item {
       height: root.cardHeight
       radius: root.cornerRadius
       anchors.centerIn: parent
-      color: root.background
+      color: Util.alpha(root.background, root.settings.appearance.backgroundOpacity)
       borderSpec: root.borderSpec
       padding: root.contentMargin
 
@@ -1074,6 +1155,8 @@ Item {
           if (event.key === Qt.Key_Escape) {
             if (root.activePanel === "preview" && root.vimMode && root.vimState.mode !== "normal") {
               root.handleEditorKey(event)
+            } else if (root.quickSettingsOpen) {
+              root.quickSettingsOpen = false
             } else if (root.activePanel === "preview" && root.editorSearchOpen) {
               root.editorSearchOpen = false
             } else if (root.activePanel === "preview") {
@@ -1103,6 +1186,9 @@ Item {
             event.accepted = true
           } else if (appAction === "startOcr") {
             root.startOcr(true)
+            event.accepted = true
+          } else if (appAction === "openSettings") {
+            root.openAdvancedSettings()
             event.accepted = true
           } else if (root.activePanel === "preview") {
             if (root.handleEditorKey(event)) event.accepted = true
@@ -1268,6 +1354,32 @@ Item {
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
                   onClicked: root.startOcr(true)
+                }
+              }
+
+              Rectangle {
+                width: Math.max(Style.space(28), root.headerHeight - Style.space(4))
+                height: Math.max(Style.space(28), root.headerHeight - Style.space(4))
+                radius: root.cornerRadius
+                color: (root.quickSettingsOpen || settingsBtnMouse.containsMouse) ? root.selectedBackground : "transparent"
+                border.width: (root.quickSettingsOpen || settingsBtnMouse.containsMouse) ? Style.normalBorderWidth : 0
+                border.color: Util.alpha(root.border, 0.35)
+
+                Text {
+                  anchors.centerIn: parent
+                  text: "󰒓"
+                  color: (root.quickSettingsOpen || settingsBtnMouse.containsMouse) ? root.selectedText : root.foreground
+                  opacity: (root.quickSettingsOpen || settingsBtnMouse.containsMouse) ? 1.0 : 0.72
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                }
+
+                MouseArea {
+                  id: settingsBtnMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.quickSettingsOpen = !root.quickSettingsOpen
                 }
               }
             }
@@ -1701,7 +1813,9 @@ Item {
                       anchors.fill: parent
                       cursorShape: Qt.PointingHandCursor
                       onClicked: {
-                        root.vimMode = !root.vimMode
+                        var next = SettingsStore.parseSettings(root.settings)
+                        next.editor.vimMode = !next.editor.vimMode
+                        root.applySettings(next)
                         VimEngine.resetVimState(root.vimState, "normal")
                         root.editorRevision++
                       }
@@ -1876,6 +1990,95 @@ Item {
               horizontalAlignment: Text.AlignHCenter
               width: parent.width
               elide: Text.ElideRight
+            }
+          }
+        }
+      }
+
+      BorderSurface {
+        id: quickSettingsCard
+        visible: root.quickSettingsOpen
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.topMargin: root.contentMargin + root.headerHeight + Style.space(6)
+        anchors.rightMargin: root.contentMargin
+        z: 18
+        width: Style.space(250)
+        height: qsCol.implicitHeight + Style.space(24)
+        radius: root.cornerRadius
+        color: root.background
+        borderSpec: Border.flat(Util.alpha(root.border, 0.45), Style.normalBorderWidth)
+        padding: Style.space(12)
+
+        MouseArea { anchors.fill: parent; onClicked: {} }
+
+        Column {
+          id: qsCol
+          anchors.fill: parent
+          anchors.margins: Style.space(12)
+          spacing: Style.space(8)
+
+          Text { text: "Quick Settings"; color: root.selectedText; font.family: root.fontFamily; font.pixelSize: Style.font.body; font.weight: Font.DemiBold }
+
+          Rectangle {
+            width: parent.width; height: Style.space(26); radius: Math.max(4, root.cornerRadius - 4)
+            color: root.vimMode ? root.selectedBackground : Util.alpha(root.foreground, 0.08)
+            Text { anchors.centerIn: parent; text: "Vim Mode: " + (root.vimMode ? "ON" : "OFF"); color: root.vimMode ? root.selectedText : root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+            MouseArea {
+              anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                var next = SettingsStore.parseSettings(root.settings)
+                next.editor.vimMode = !next.editor.vimMode
+                root.applySettings(next)
+                VimEngine.resetVimState(root.vimState, "normal")
+              }
+            }
+          }
+
+          Rectangle {
+            width: parent.width; height: Style.space(26); radius: Math.max(4, root.cornerRadius - 4)
+            color: root.ocrEnabled ? root.selectedBackground : Util.alpha(root.foreground, 0.08)
+            Text { anchors.centerIn: parent; text: "OCR: " + (root.ocrEnabled ? "ON" : "OFF") + " (" + root.ocrLanguages + ")"; color: root.ocrEnabled ? root.selectedText : root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+            MouseArea {
+              anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                var next = SettingsStore.parseSettings(root.settings)
+                next.ocr.enabled = !next.ocr.enabled
+                root.applySettings(next)
+              }
+            }
+          }
+
+          Rectangle {
+            width: parent.width; height: Style.space(26); radius: Math.max(4, root.cornerRadius - 4)
+            color: Util.alpha(root.foreground, 0.08)
+            Text {
+              anchors.centerIn: parent
+              text: "History Limit: " + (root.historyLimit < 0 ? "Unlimited" : String(root.historyLimit))
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+            MouseArea {
+              anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                var cycle = [100, 250, 500, 1000, -1]
+                var idx = cycle.indexOf(root.historyLimit)
+                var next = SettingsStore.parseSettings(root.settings)
+                next.clipboard.historyLimit = cycle[(idx + 1) % cycle.length]
+                root.applySettings(next)
+              }
+            }
+          }
+
+          Rectangle {
+            width: parent.width; height: Style.space(28); radius: Math.max(4, root.cornerRadius - 4)
+            color: advBtnMouse.containsMouse ? root.selectedBackground : Util.alpha(root.foreground, 0.12)
+            Text { anchors.centerIn: parent; text: "Advanced Settings… (Ctrl+,)"; color: advBtnMouse.containsMouse ? root.selectedText : root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall; font.weight: Font.DemiBold }
+            MouseArea {
+              id: advBtnMouse
+              anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+              onClicked: root.openAdvancedSettings()
             }
           }
         }
