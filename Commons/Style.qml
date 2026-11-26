@@ -371,9 +371,7 @@ QtObject {
   readonly property var easeOut: [0.23, 1.0, 0.32, 1.0, 1.0, 1.0]
 
   function refresh() {
-    hyprctlProc.running = true
-    gapsOutProc.running = true
-    animationsProc.running = true
+    // Hyprland is not used on COSMIC Wayland; keep configured defaults.
   }
 
   function scheduleRefresh() {

@@ -2168,7 +2168,7 @@ Item {
             Text {
               textFormat: Text.PlainText
               text: root.filterText
-                ? Commons.I18n.t("common.noMatchesFor").arg(root.filterText)
+                ? Commons.I18n.t("common.noMatchesFor", "No matches for “%1”").replace("%1", root.filterText)
                 : (root.activeTab === "pinned"
                   ? Commons.I18n.t("clipboard.emptyPinned", "No pinned entries")
                   : Commons.I18n.t("clipboard.empty"))
