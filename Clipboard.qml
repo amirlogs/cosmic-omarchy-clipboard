@@ -84,6 +84,7 @@ Item {
   property real hoverTooltipX: 0
   property real hoverTooltipY: 0
   property var installedOcrLangs: []
+  property var externalShortcuts: []
   property var keybindings: Keybindings.defaultConfig()
   property string keybindingsPath: Quickshell.env("HOME") + "/.config/omarchy-clipboard/keybindings.json"
   property string shortcutsSyncScript: pluginPath + "/bin/omarchy-clipboard-shortcuts"
@@ -145,9 +146,20 @@ Item {
     root.editorRevision++
   }
 
-  function applyKeybindings(nextKb) {
+  function applyKeybindings(nextKb, overrideCombos) {
     root.keybindings = Keybindings.parseConfig(nextKb)
     keybindingsFile.setText(Keybindings.serializeConfig(root.keybindings))
+    var cmd = [
+      root.shortcutsSyncScript,
+      "--open", root.keybindings.global.openClipboard || "",
+      "--ocr", root.keybindings.global.ocrExtract || "",
+      "--open-ocr", root.keybindings.global.clipboardAndOcr || ""
+    ]
+    if (overrideCombos && overrideCombos.length > 0) {
+      cmd.push("--override")
+      cmd.push(overrideCombos.join(","))
+    }
+    shortcutsSyncProc.command = cmd
     shortcutsSyncProc.running = false
     shortcutsSyncProc.running = true
   }
@@ -163,6 +175,8 @@ Item {
     root.close()
     ocrLangsProc.running = false
     ocrLangsProc.running = true
+    externalShortcutsProc.running = false
+    externalShortcutsProc.running = true
     settingsWindow.opened = true
   }
 
@@ -388,7 +402,7 @@ Item {
         else root.removeDisplayIndex(root.selectedIndex)
       } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
         if (root.cursorActive && (event.modifiers & Qt.AltModifier)) root.openIndex(root.selectedIndex)
-        else if (root.cursorActive && (event.modifiers & Qt.ShiftModifier)) root.copyIndex(root.selectedIndex)
+        else if (root.cursorActive && (event.modifiers & Qt.ShiftModifier)) root.alternateActivateIndex(root.selectedIndex)
         else if (root.cursorActive) root.activateIndex(root.selectedIndex)
       }
       return true
@@ -874,7 +888,23 @@ Item {
   function activateIndex(index) {
     if (index < 0 || index >= displayModel.count) return
     var row = displayModel.get(index)
-    root.applySelected(row)
+    var autoPaste = (root.settings.general && root.settings.general.autoPaste === true)
+    if (autoPaste) {
+      root.applySelected(row)
+    } else {
+      root.copySelected(row)
+    }
+  }
+
+  function alternateActivateIndex(index) {
+    if (index < 0 || index >= displayModel.count) return
+    var row = displayModel.get(index)
+    var autoPaste = (root.settings.general && root.settings.general.autoPaste === true)
+    if (autoPaste) {
+      root.copySelected(row)
+    } else {
+      root.applySelected(row)
+    }
   }
 
   function copyIndex(index) {
@@ -895,7 +925,7 @@ Item {
     if (row.entryType === "image") {
       Quickshell.execDetached([root.pasteFileScript, row.mime, row.path])
     } else if (row.fullText) {
-      Quickshell.execDetached([root.pasteTextScript, "--shift-insert", "--history-index", String(row.historyIndex)])
+      Quickshell.execDetached([root.pasteTextScript, "--universal", "--history-index", String(row.historyIndex)])
     }
   }
 
@@ -1055,6 +1085,26 @@ Item {
   Process {
     id: shortcutsSyncProc
     command: [root.shortcutsSyncScript]
+    onExited: {
+      externalShortcutsProc.running = false
+      externalShortcutsProc.running = true
+    }
+  }
+
+  Process {
+    id: externalShortcutsProc
+    command: [root.shortcutsSyncScript, "--list-external"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          var parsed = JSON.parse(String(text || "[]"))
+          root.externalShortcuts = Array.isArray(parsed) ? parsed : []
+        } catch (e) {
+          root.externalShortcuts = []
+        }
+      }
+    }
   }
 
   property alias settingsWindowItem: settingsWindow
@@ -1064,8 +1114,9 @@ Item {
     settings: root.settings
     keybindings: root.keybindings
     installedOcrLangs: root.installedOcrLangs
+    externalShortcuts: root.externalShortcuts
     onUpdateSettings: function(next) { root.applySettings(next) }
-    onUpdateKeybindings: function(next) { root.applyKeybindings(next) }
+    onUpdateKeybindings: function(next, overrides) { root.applyKeybindings(next, overrides) }
     onResetDefaults: root.resetAllDefaults()
     onManualCleanup: function(hours) { root.pruneOlderThanHours(hours) }
     onCleanupOrphanImages: {
@@ -1340,11 +1391,11 @@ Item {
               root.selectAbsolute(displayModel.count - 1)
               event.accepted = true
             } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            if (root.cursorActive && (event.modifiers & Qt.AltModifier)) root.openIndex(root.selectedIndex)
-            else if (root.cursorActive && (event.modifiers & Qt.ShiftModifier)) root.copyIndex(root.selectedIndex)
-            else if (root.cursorActive) root.activateIndex(root.selectedIndex)
-            else if (displayModel.count > 0) root.cursorActive = true
-            event.accepted = true
+              if (root.cursorActive && (event.modifiers & Qt.AltModifier)) root.openIndex(root.selectedIndex)
+              else if (root.cursorActive && (event.modifiers & Qt.ShiftModifier)) root.alternateActivateIndex(root.selectedIndex)
+              else if (root.cursorActive) root.activateIndex(root.selectedIndex)
+              else if (displayModel.count > 0) root.cursorActive = true
+              event.accepted = true
             } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127) {
               root.setFilter(root.filterText + event.text)
               event.accepted = true
@@ -1715,10 +1766,14 @@ Item {
                     onPositionChanged: function(mouse) {
                       root.selectFromPointer(row.index, row, mouse)
                     }
-                    onClicked: {
+                    onClicked: function(mouse) {
                       root.cursorActive = true
                       root.selectedIndex = row.index
-                      root.activateIndex(row.index)
+                      if (mouse && (mouse.modifiers & Qt.ShiftModifier)) {
+                        root.alternateActivateIndex(row.index)
+                      } else {
+                        root.activateIndex(row.index)
+                      }
                     }
                   }
 
@@ -2006,13 +2061,28 @@ Item {
 
                   Rectangle {
                     id: editorCustomCursor
-                    readonly property string styleMode: root.settings.editor.cursorStyle || "auto"
-                    readonly property bool isBlock: styleMode === "block" || (styleMode === "auto" && root.vimMode && (!root.vimState || root.vimState.mode !== "insert"))
+                    readonly property string currentVimMode: {
+                      var _rev = root.editorRevision
+                      return (root.vimState && root.vimMode) ? root.vimState.mode : "normal"
+                    }
+                    readonly property bool inInsert: !root.vimMode || currentVimMode === "insert"
+                    readonly property string activeStyle: {
+                      var _rev = root.editorRevision
+                      if (inInsert) {
+                        return root.settings.editor.insertCursorStyle || "line"
+                      } else {
+                        return root.settings.editor.normalCursorStyle || "block"
+                      }
+                    }
+                    readonly property bool isBlock: activeStyle === "block"
+                    readonly property bool isUnderline: activeStyle === "underline"
                     visible: previewPanel.panelFocused && previewPanel.isTextEditable && (isBlock || root.editorCursorBlinkOn)
                     x: editorTextEdit.cursorRectangle.x
-                    y: editorTextEdit.cursorRectangle.y
-                    width: isBlock ? Math.max(Style.space(9), root.settings.editor.fontSize * 0.6) : Math.max(2, Style.space(2))
-                    height: Math.max(root.settings.editor.fontSize + 2, editorTextEdit.cursorRectangle.height)
+                    y: isUnderline
+                      ? (editorTextEdit.cursorRectangle.y + editorTextEdit.cursorRectangle.height - Math.max(2, Style.space(2)))
+                      : editorTextEdit.cursorRectangle.y
+                    width: (isBlock || isUnderline) ? Math.max(Style.space(9), root.settings.editor.fontSize * 0.6) : Math.max(2, Style.space(2))
+                    height: isUnderline ? Math.max(2, Style.space(2)) : Math.max(root.settings.editor.fontSize + 2, editorTextEdit.cursorRectangle.height)
                     color: root.selectedText
                     opacity: isBlock ? (root.editorCursorBlinkOn ? 0.52 : 0.18) : 1.0
                     z: 2
@@ -2393,7 +2463,7 @@ Item {
                 { k: (kb.app.deleteEntry || "Delete") + " / " + (kb.app.undoDelete || "Ctrl+Z"), d: "Delete entry / Undo delete" },
                 { k: kb.app.startOcr || "Ctrl+O", d: "Screen Text Extraction (OCR)" },
                 { k: kb.app.openSettings || "Ctrl+,", d: "Open Advanced Settings" },
-                { k: "Enter / Shift+Enter / Alt+Enter", d: "Paste / Copy only / Open externally" }
+                { k: "Enter / Shift+Enter / Alt+Enter", d: "Choose (Default) / Alternate (Paste or Copy) / Open externally" }
               ]
               if (root.vimMode) {
                 list.push({ k: "j / k / g / G / l / /", d: "List Vim: Down / Up / Top / Bottom / Editor / Search" })

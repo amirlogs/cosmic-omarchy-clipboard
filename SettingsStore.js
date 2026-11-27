@@ -5,11 +5,14 @@ function defaultSettings() {
     version: 1,
     general: {
       defaultTab: "history",       // "history" | "pinned" | "all"
-      closeOnCopy: true
+      closeOnCopy: true,
+      autoPaste: false
     },
     editor: {
       vimMode: false,
       jkExit: true,
+      normalCursorStyle: "block",  // "block" | "line" | "underline"
+      insertCursorStyle: "line",   // "line" | "block" | "underline"
       cursorStyle: "auto",         // "auto" | "line" | "block"
       fontSize: 14                 // 12 | 14 | 16 | 18
     },
@@ -62,10 +65,17 @@ function parseSettings(raw) {
         d.general.defaultTab = obj.general.defaultTab
       }
       if (typeof obj.general.closeOnCopy === "boolean") d.general.closeOnCopy = obj.general.closeOnCopy
+      if (typeof obj.general.autoPaste === "boolean") d.general.autoPaste = obj.general.autoPaste
     }
     if (obj.editor && typeof obj.editor === "object") {
       if (typeof obj.editor.vimMode === "boolean") d.editor.vimMode = obj.editor.vimMode
       if (typeof obj.editor.jkExit === "boolean") d.editor.jkExit = obj.editor.jkExit
+      if (obj.editor.normalCursorStyle === "block" || obj.editor.normalCursorStyle === "line" || obj.editor.normalCursorStyle === "underline") {
+        d.editor.normalCursorStyle = obj.editor.normalCursorStyle
+      }
+      if (obj.editor.insertCursorStyle === "block" || obj.editor.insertCursorStyle === "line" || obj.editor.insertCursorStyle === "underline") {
+        d.editor.insertCursorStyle = obj.editor.insertCursorStyle
+      }
       if (obj.editor.cursorStyle === "auto" || obj.editor.cursorStyle === "line" || obj.editor.cursorStyle === "block") {
         d.editor.cursorStyle = obj.editor.cursorStyle
       }

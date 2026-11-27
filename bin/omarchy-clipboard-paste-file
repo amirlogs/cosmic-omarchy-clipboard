@@ -29,5 +29,5 @@ if [[ $copy_only == "true" ]]; then
   exit
 fi
 
-sleep 0.15
-wtype -M shift -k Insert -m shift 2>/dev/null || true
+sleep 0.2
+wtype -M ctrl -s 50 -k v -s 20 -m ctrl 2>/dev/null || wtype -M shift -s 50 -k Insert -s 20 -m shift 2>/dev/null || true

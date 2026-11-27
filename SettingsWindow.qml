@@ -13,14 +13,16 @@ FloatingWindow {
   property var settings: SettingsStore.defaultSettings()
   property var keybindings: Keybindings.defaultConfig()
   property var installedOcrLangs: []
+  property var externalShortcuts: []
   property string activeCategory: "general"
   property string searchQuery: ""
   property string recordingScope: ""
   property string recordingAction: ""
   property var keyConflicts: []
+  property var pendingOverride: null
 
   signal updateSettings(var nextSettings)
-  signal updateKeybindings(var nextKeybindings)
+  signal updateKeybindings(var nextKeybindings, var overrideCombos)
   signal resetDefaults()
   signal manualCleanup(int hours)
   signal cleanupOrphanImages()
@@ -30,7 +32,7 @@ FloatingWindow {
   title: "Clipboard Settings"
   implicitWidth: Math.min(900, Screen.width - 40)
   implicitHeight: Math.min(640, Screen.height - 40)
-  color: "transparent"
+  color: Commons.Color.menu.background
 
   onVisibleChanged: {
     if (visible) {
@@ -39,6 +41,7 @@ FloatingWindow {
       opened = false
       recordingScope = ""
       recordingAction = ""
+      pendingOverride = null
       windowClosed()
     }
   }
@@ -46,15 +49,124 @@ FloatingWindow {
   function mutateSetting(mutator) {
     var next = SettingsStore.parseSettings(win.settings)
     mutator(next)
+    win.settings = next
     win.updateSettings(next)
   }
 
+  function actionLabelFor(scope, action) {
+    var labels = {
+      "global:openClipboard": "Open clipboard (Global)",
+      "global:ocrExtract": "Screen OCR (Global)",
+      "global:clipboardAndOcr": "Clipboard + OCR (Global)",
+      "app:switchPanel": "Switch panel (Application)",
+      "app:switchTab": "Next tab (Application)",
+      "app:tabHistory": "History tab (Application)",
+      "app:tabPinned": "Pinned tab (Application)",
+      "app:togglePin": "Pin / Unpin (Application)",
+      "app:deleteEntry": "Delete entry (Application)",
+      "app:clearHistory": "Clear history (Application)",
+      "app:undoDelete": "Undo delete (Application)",
+      "app:startOcr": "Start OCR (Application)",
+      "app:openSettings": "Open settings (Application)",
+      "normal:undo": "Undo (Normal editor)",
+      "normal:redo": "Redo (Normal editor)",
+      "normal:copySelection": "Copy selection (Normal editor)",
+      "normal:cutSelection": "Cut selection (Normal editor)",
+      "normal:paste": "Paste (Normal editor)",
+      "normal:selectAll": "Select all (Normal editor)",
+      "normal:find": "Find in text (Normal editor)",
+      "vim:undo": "Undo (Vim editor)",
+      "vim:redo": "Redo (Vim editor)"
+    }
+    return labels[scope + ":" + action] || (scope + "." + action)
+  }
+
+  function findBindingConflicts(scope, action, combo) {
+    var norm = (scope === "vim" && String(combo).indexOf("+") < 0)
+      ? String(combo || "")
+      : Keybindings.normalizeCombo(combo)
+    if (!norm) return []
+
+    var conflicts = []
+    var checkScopes = [scope]
+    if (scope === "global") checkScopes.push("app")
+    else if (scope === "app") checkScopes.push("global")
+
+    for (var s = 0; s < checkScopes.length; s++) {
+      var sc = checkScopes[s]
+      var map = win.keybindings[sc] || {}
+      for (var act in map) {
+        if (sc === scope && act === action) continue
+        var existing = (sc === "vim" && String(map[act]).indexOf("+") < 0)
+          ? String(map[act] || "")
+          : Keybindings.normalizeCombo(map[act])
+        if (existing && existing === norm) {
+          conflicts.push({
+            type: "internal",
+            scope: sc,
+            action: act,
+            combo: norm,
+            label: win.actionLabelFor(sc, act)
+          })
+        }
+      }
+    }
+
+    if (scope === "global" && Array.isArray(win.externalShortcuts)) {
+      for (var e = 0; e < win.externalShortcuts.length; e++) {
+        var ext = win.externalShortcuts[e]
+        if (!ext || !ext.combo) continue
+        if (Keybindings.normalizeCombo(ext.combo) === norm) {
+          conflicts.push({
+            type: "external",
+            combo: norm,
+            label: ext.label + " (COSMIC System Shortcut)"
+          })
+        }
+      }
+    }
+
+    return conflicts
+  }
+
   function recordBinding(scope, action, combo) {
-    var res = Keybindings.setBinding(win.keybindings, scope, action, combo)
-    win.keyConflicts = res.conflicts
     win.recordingScope = ""
     win.recordingAction = ""
-    win.updateKeybindings(res.config)
+    if (combo) {
+      var conflicts = win.findBindingConflicts(scope, action, combo)
+      if (conflicts.length > 0) {
+        win.pendingOverride = {
+          scope: scope,
+          action: action,
+          combo: combo,
+          conflicts: conflicts
+        }
+        return
+      }
+    }
+    var res = Keybindings.setBinding(win.keybindings, scope, action, combo)
+    win.keyConflicts = res.conflicts
+    win.updateKeybindings(res.config, [])
+  }
+
+  function confirmOverride() {
+    if (!win.pendingOverride) return
+    var p = win.pendingOverride
+    win.pendingOverride = null
+
+    var next = Keybindings.cloneConfig(win.keybindings)
+    var extOverrides = []
+    for (var i = 0; i < p.conflicts.length; i++) {
+      var c = p.conflicts[i]
+      if (c.type === "internal" && next[c.scope] && next[c.scope][c.action] !== undefined) {
+        next[c.scope][c.action] = ""
+      } else if (c.type === "external" && c.combo) {
+        extOverrides.push(c.combo)
+      }
+    }
+    var res = Keybindings.setBinding(next, p.scope, p.action, p.combo)
+    win.keyConflicts = res.conflicts
+    win.updateKeybindings(res.config, extOverrides)
   }
 
   function hasLang(code) {
@@ -83,12 +195,10 @@ FloatingWindow {
     { key: "appearance", label: "Appearance" }
   ]
 
-  BorderSurface {
+  Rectangle {
     id: frame
     anchors.fill: parent
-    radius: Style.cornerRadius
     color: Commons.Color.menu.background
-    borderSpec: Border.surfaceSpec("menu", "border", Commons.Color.menu.border, Math.max(1, Style.space(2)))
 
     Item {
       id: settingsKeys
@@ -96,10 +206,26 @@ FloatingWindow {
       focus: win.visible
 
       Keys.onPressed: function(event) {
+        if (win.pendingOverride) {
+          if (event.key === Qt.Key_Escape) {
+            win.pendingOverride = null
+            event.accepted = true
+          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            win.confirmOverride()
+            event.accepted = true
+          }
+          return
+        }
+
         if (win.recordingScope && win.recordingAction) {
           if (event.key === Qt.Key_Escape) {
             win.recordingScope = ""
             win.recordingAction = ""
+            event.accepted = true
+            return
+          }
+          if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) && !event.modifiers) {
+            win.recordBinding(win.recordingScope, win.recordingAction, "")
             event.accepted = true
             return
           }
@@ -405,7 +531,7 @@ FloatingWindow {
             SettingsRow {
               width: parent.width
               label: "Close after copy"
-              description: "Dismiss the clipboard overlay after pasting an entry."
+              description: "Dismiss the clipboard overlay after choosing or copying an entry."
               SSwitch {
                 checked: win.settings.general.closeOnCopy
                 onToggled: win.mutateSetting(function(s) { s.general.closeOnCopy = !s.general.closeOnCopy })
@@ -444,120 +570,184 @@ FloatingWindow {
 
             SettingsSection { title: "Global"; width: parent.width }
 
-            Repeater {
-              model: [
-                { scope: "global", action: "openClipboard",   label: "Open clipboard",     description: "Show or hide the clipboard overlay." },
-                { scope: "global", action: "ocrExtract",      label: "Screen OCR",          description: "Select a screen region and extract text." },
-                { scope: "global", action: "clipboardAndOcr", label: "Clipboard + OCR",     description: "Open the clipboard and trigger OCR." }
-              ]
-              KeycapRow {
-                required property var modelData
+            Rectangle {
+              width: parent.width
+              height: globalGroupCol.implicitHeight
+              radius: Math.max(6, Style.space(8))
+              color: Util.alpha(Commons.Color.menu.text, 0.03)
+              border.width: 1
+              border.color: Util.alpha(Commons.Color.menu.text, 0.08)
+
+              Column {
+                id: globalGroupCol
                 width: parent.width
-                label: modelData.label
-                description: modelData.description
-                comboString: win.comboFor(modelData.scope, modelData.action)
-                recording: win.recordingScope === modelData.scope && win.recordingAction === modelData.action
-                conflicted: win.isConflicted(modelData.scope, modelData.action)
-                onEdit: {
-                  win.recordingScope = modelData.scope
-                  win.recordingAction = modelData.action
-                  settingsKeys.forceActiveFocus()
+
+                Repeater {
+                  model: [
+                    { scope: "global", action: "openClipboard",   label: "Open clipboard",     description: "Show or hide the clipboard overlay." },
+                    { scope: "global", action: "ocrExtract",      label: "Screen OCR",          description: "Select a screen region and extract text." },
+                    { scope: "global", action: "clipboardAndOcr", label: "Clipboard + OCR",     description: "Open the clipboard and trigger OCR." }
+                  ]
+                  KeycapRow {
+                    required property var modelData
+                    required property int index
+                    width: parent.width
+                    label: modelData.label
+                    description: modelData.description
+                    showDivider: index < 2
+                    comboString: win.comboFor(modelData.scope, modelData.action)
+                    recording: win.recordingScope === modelData.scope && win.recordingAction === modelData.action
+                    conflicted: win.isConflicted(modelData.scope, modelData.action)
+                    onEdit: {
+                      win.recordingScope = modelData.scope
+                      win.recordingAction = modelData.action
+                      settingsKeys.forceActiveFocus()
+                    }
+                    onCancel: {
+                      win.recordingScope = ""
+                      win.recordingAction = ""
+                    }
+                    onClear: win.recordBinding(modelData.scope, modelData.action, "")
+                  }
                 }
-                onCancel: {
-                  win.recordingScope = ""
-                  win.recordingAction = ""
-                }
-                onClear: win.recordBinding(modelData.scope, modelData.action, "")
               }
             }
 
             SettingsSection { title: "Application"; width: parent.width }
 
-            Repeater {
-              model: [
-                { scope: "app", action: "switchPanel",   label: "Switch panel",        description: "Move focus between the list and editor." },
-                { scope: "app", action: "switchTab",     label: "Next tab",             description: "Cycle through History / Pinned / All." },
-                { scope: "app", action: "togglePin",     label: "Pin / Unpin",          description: "Toggle the pin state of the selected entry." },
-                { scope: "app", action: "deleteEntry",   label: "Delete entry",         description: "Remove the selected entry from history." },
-                { scope: "app", action: "undoDelete",    label: "Undo delete",          description: "Restore the last deleted entry." },
-                { scope: "app", action: "startOcr",      label: "Start OCR",            description: "Begin a screen-region capture." },
-                { scope: "app", action: "openSettings",  label: "Open settings",        description: "Open the advanced settings window." }
-              ]
-              KeycapRow {
-                required property var modelData
+            Rectangle {
+              width: parent.width
+              height: appGroupCol.implicitHeight
+              radius: Math.max(6, Style.space(8))
+              color: Util.alpha(Commons.Color.menu.text, 0.03)
+              border.width: 1
+              border.color: Util.alpha(Commons.Color.menu.text, 0.08)
+
+              Column {
+                id: appGroupCol
                 width: parent.width
-                label: modelData.label
-                description: modelData.description
-                comboString: win.comboFor(modelData.scope, modelData.action)
-                recording: win.recordingScope === modelData.scope && win.recordingAction === modelData.action
-                conflicted: win.isConflicted(modelData.scope, modelData.action)
-                onEdit: {
-                  win.recordingScope = modelData.scope
-                  win.recordingAction = modelData.action
-                  settingsKeys.forceActiveFocus()
+
+                Repeater {
+                  model: [
+                    { scope: "app", action: "switchPanel",   label: "Switch panel",        description: "Move focus between the list and editor." },
+                    { scope: "app", action: "switchTab",     label: "Next tab",             description: "Cycle through History / Pinned / All." },
+                    { scope: "app", action: "togglePin",     label: "Pin / Unpin",          description: "Toggle the pin state of the selected entry." },
+                    { scope: "app", action: "deleteEntry",   label: "Delete entry",         description: "Remove the selected entry from history." },
+                    { scope: "app", action: "undoDelete",    label: "Undo delete",          description: "Restore the last deleted entry." },
+                    { scope: "app", action: "startOcr",      label: "Start OCR",            description: "Begin a screen-region capture." },
+                    { scope: "app", action: "openSettings",  label: "Open settings",        description: "Open the advanced settings window." }
+                  ]
+                  KeycapRow {
+                    required property var modelData
+                    required property int index
+                    width: parent.width
+                    label: modelData.label
+                    description: modelData.description
+                    showDivider: index < 6
+                    comboString: win.comboFor(modelData.scope, modelData.action)
+                    recording: win.recordingScope === modelData.scope && win.recordingAction === modelData.action
+                    conflicted: win.isConflicted(modelData.scope, modelData.action)
+                    onEdit: {
+                      win.recordingScope = modelData.scope
+                      win.recordingAction = modelData.action
+                      settingsKeys.forceActiveFocus()
+                    }
+                    onCancel: {
+                      win.recordingScope = ""
+                      win.recordingAction = ""
+                    }
+                    onClear: win.recordBinding(modelData.scope, modelData.action, "")
+                  }
                 }
-                onCancel: {
-                  win.recordingScope = ""
-                  win.recordingAction = ""
-                }
-                onClear: win.recordBinding(modelData.scope, modelData.action, "")
               }
             }
 
             SettingsSection { title: "Normal editor"; width: parent.width }
 
-            Repeater {
-              model: [
-                { scope: "normal", action: "undo",           label: "Undo" },
-                { scope: "normal", action: "redo",           label: "Redo" },
-                { scope: "normal", action: "copySelection",  label: "Copy selection" },
-                { scope: "normal", action: "paste",          label: "Paste" },
-                { scope: "normal", action: "find",           label: "Find in text" }
-              ]
-              KeycapRow {
-                required property var modelData
+            Rectangle {
+              width: parent.width
+              height: normalGroupCol.implicitHeight
+              radius: Math.max(6, Style.space(8))
+              color: Util.alpha(Commons.Color.menu.text, 0.03)
+              border.width: 1
+              border.color: Util.alpha(Commons.Color.menu.text, 0.08)
+
+              Column {
+                id: normalGroupCol
                 width: parent.width
-                label: modelData.label
-                comboString: win.comboFor(modelData.scope, modelData.action)
-                recording: win.recordingScope === modelData.scope && win.recordingAction === modelData.action
-                conflicted: win.isConflicted(modelData.scope, modelData.action)
-                onEdit: {
-                  win.recordingScope = modelData.scope
-                  win.recordingAction = modelData.action
-                  settingsKeys.forceActiveFocus()
+
+                Repeater {
+                  model: [
+                    { scope: "normal", action: "undo",           label: "Undo" },
+                    { scope: "normal", action: "redo",           label: "Redo" },
+                    { scope: "normal", action: "copySelection",  label: "Copy selection" },
+                    { scope: "normal", action: "paste",          label: "Paste" },
+                    { scope: "normal", action: "find",           label: "Find in text" }
+                  ]
+                  KeycapRow {
+                    required property var modelData
+                    required property int index
+                    width: parent.width
+                    label: modelData.label
+                    showDivider: index < 4
+                    comboString: win.comboFor(modelData.scope, modelData.action)
+                    recording: win.recordingScope === modelData.scope && win.recordingAction === modelData.action
+                    conflicted: win.isConflicted(modelData.scope, modelData.action)
+                    onEdit: {
+                      win.recordingScope = modelData.scope
+                      win.recordingAction = modelData.action
+                      settingsKeys.forceActiveFocus()
+                    }
+                    onCancel: {
+                      win.recordingScope = ""
+                      win.recordingAction = ""
+                    }
+                    onClear: win.recordBinding(modelData.scope, modelData.action, "")
+                  }
                 }
-                onCancel: {
-                  win.recordingScope = ""
-                  win.recordingAction = ""
-                }
-                onClear: win.recordBinding(modelData.scope, modelData.action, "")
               }
             }
 
             SettingsSection { title: "Vim editor"; width: parent.width }
 
-            Repeater {
-              model: [
-                { scope: "vim", action: "undo", label: "Undo" },
-                { scope: "vim", action: "redo", label: "Redo" }
-              ]
-              KeycapRow {
-                required property var modelData
+            Rectangle {
+              width: parent.width
+              height: vimGroupCol.implicitHeight
+              radius: Math.max(6, Style.space(8))
+              color: Util.alpha(Commons.Color.menu.text, 0.03)
+              border.width: 1
+              border.color: Util.alpha(Commons.Color.menu.text, 0.08)
+
+              Column {
+                id: vimGroupCol
                 width: parent.width
-                label: modelData.label
-                comboString: win.comboFor(modelData.scope, modelData.action)
-                recording: win.recordingScope === modelData.scope && win.recordingAction === modelData.action
-                conflicted: win.isConflicted(modelData.scope, modelData.action)
-                onEdit: {
-                  win.recordingScope = modelData.scope
-                  win.recordingAction = modelData.action
-                  settingsKeys.forceActiveFocus()
+
+                Repeater {
+                  model: [
+                    { scope: "vim", action: "undo", label: "Undo" },
+                    { scope: "vim", action: "redo", label: "Redo" }
+                  ]
+                  KeycapRow {
+                    required property var modelData
+                    required property int index
+                    width: parent.width
+                    label: modelData.label
+                    showDivider: index < 1
+                    comboString: win.comboFor(modelData.scope, modelData.action)
+                    recording: win.recordingScope === modelData.scope && win.recordingAction === modelData.action
+                    conflicted: win.isConflicted(modelData.scope, modelData.action)
+                    onEdit: {
+                      win.recordingScope = modelData.scope
+                      win.recordingAction = modelData.action
+                      settingsKeys.forceActiveFocus()
+                    }
+                    onCancel: {
+                      win.recordingScope = ""
+                      win.recordingAction = ""
+                    }
+                    onClear: win.recordBinding(modelData.scope, modelData.action, "")
+                  }
                 }
-                onCancel: {
-                  win.recordingScope = ""
-                  win.recordingAction = ""
-                }
-                onClear: win.recordBinding(modelData.scope, modelData.action, "")
               }
             }
           }
@@ -610,16 +800,31 @@ FloatingWindow {
 
             SettingsRow {
               width: parent.width
-              label: "Cursor style"
-              description: "Auto picks line in Insert mode and block in Normal mode."
+              label: "Normal mode cursor"
+              description: "Cursor shape in Normal navigation mode."
               SSegment {
                 model: [
-                  { val: "auto",  label: "Auto" },
-                  { val: "line",  label: "Line" },
-                  { val: "block", label: "Block" }
+                  { val: "block",     label: "Block" },
+                  { val: "line",      label: "Line" },
+                  { val: "underline", label: "Underline" }
                 ]
-                currentValue: win.settings.editor.cursorStyle
-                onSelected: function(v) { win.mutateSetting(function(s) { s.editor.cursorStyle = v }) }
+                currentValue: win.settings.editor.normalCursorStyle || "block"
+                onSelected: function(v) { win.mutateSetting(function(s) { s.editor.normalCursorStyle = v }) }
+              }
+            }
+
+            SettingsRow {
+              width: parent.width
+              label: "Insert mode cursor"
+              description: "Cursor shape in Insert typing mode."
+              SSegment {
+                model: [
+                  { val: "line",      label: "Line" },
+                  { val: "block",     label: "Block" },
+                  { val: "underline", label: "Underline" }
+                ]
+                currentValue: win.settings.editor.insertCursorStyle || "line"
+                onSelected: function(v) { win.mutateSetting(function(s) { s.editor.insertCursorStyle = v }) }
               }
             }
 
@@ -976,6 +1181,138 @@ FloatingWindow {
 
           // Footer spacer
           Item { width: 1; height: Style.space(8) }
+        }
+      }
+    }
+
+    // ── SHORTCUT CONFLICT OVERRIDE MODAL ──────────────────────────────────
+    Rectangle {
+      visible: win.pendingOverride !== null
+      anchors.fill: parent
+      color: Util.alpha("#000000", 0.55)
+      z: 50
+
+      MouseArea {
+        anchors.fill: parent
+        onClicked: win.pendingOverride = null
+      }
+
+      Rectangle {
+        width: Math.min(Style.space(420), parent.width - Style.space(48))
+        height: overrideDialogCol.implicitHeight + Style.space(36)
+        anchors.centerIn: parent
+        radius: Math.max(8, Style.space(10))
+        color: Commons.Color.menu.background
+        border.width: 1
+        border.color: Util.alpha(Commons.Color.warning, 0.5)
+
+        MouseArea { anchors.fill: parent } // absorb clicks inside dialog
+
+        Column {
+          id: overrideDialogCol
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: Style.space(18)
+          spacing: Style.space(12)
+
+          Row {
+            spacing: Style.space(8)
+            Text {
+              text: "⚠"
+              color: Commons.Color.warning
+              font.pixelSize: Style.font.heading
+              anchors.verticalCenter: parent.verticalCenter
+            }
+            Text {
+              text: "Shortcut Already Taken"
+              color: Commons.Color.menu.selectedText
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.heading
+              font.weight: Font.DemiBold
+              anchors.verticalCenter: parent.verticalCenter
+            }
+          }
+
+          Text {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            color: Util.alpha(Commons.Color.menu.text, 0.85)
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+            text: {
+              if (!win.pendingOverride) return ""
+              var lines = []
+              for (var i = 0; i < win.pendingOverride.conflicts.length; i++) {
+                lines.push("• " + win.pendingOverride.conflicts[i].label)
+              }
+              return win.pendingOverride.combo + " is already assigned to:\n" + lines.join("\n") +
+                "\n\nOverride and assign " + win.pendingOverride.combo + " to \"" +
+                win.actionLabelFor(win.pendingOverride.scope, win.pendingOverride.action) + "\"?"
+            }
+          }
+
+          Row {
+            anchors.right: parent.right
+            spacing: Style.space(8)
+
+            Rectangle {
+              height: Style.space(30)
+              width: cancelOvText.implicitWidth + Style.space(24)
+              radius: Math.max(4, Style.space(5))
+              color: cancelOvMouse.containsMouse
+                ? Util.alpha(Commons.Color.menu.text, 0.14)
+                : Util.alpha(Commons.Color.menu.text, 0.07)
+              border.width: 1
+              border.color: Util.alpha(Commons.Color.menu.text, 0.18)
+
+              Text {
+                id: cancelOvText
+                anchors.centerIn: parent
+                text: "Cancel"
+                color: Commons.Color.menu.text
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.bodySmall
+              }
+
+              MouseArea {
+                id: cancelOvMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: win.pendingOverride = null
+              }
+            }
+
+            Rectangle {
+              height: Style.space(30)
+              width: confirmOvText.implicitWidth + Style.space(24)
+              radius: Math.max(4, Style.space(5))
+              color: confirmOvMouse.containsMouse
+                ? Util.alpha(Commons.Color.warning, 0.28)
+                : Util.alpha(Commons.Color.warning, 0.18)
+              border.width: 1
+              border.color: Util.alpha(Commons.Color.warning, 0.65)
+
+              Text {
+                id: confirmOvText
+                anchors.centerIn: parent
+                text: "Override"
+                color: Commons.Color.warning
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.bodySmall
+                font.weight: Font.DemiBold
+              }
+
+              MouseArea {
+                id: confirmOvMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: win.confirmOverride()
+              }
+            }
+          }
         }
       }
     }

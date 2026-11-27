@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Syncs global shortcuts (openClipboard, ocrExtract, clipboardAndOcr) from
-# ~/.config/omarchy-clipboard/keybindings.json into COSMIC custom shortcuts.
+# ~/.config/omarchy-clipboard/keybindings.json into COSMIC custom shortcuts,
+# and supports listing/overriding external COSMIC shortcut conflicts.
 
 set -euo pipefail
 
@@ -8,37 +9,130 @@ SHORTCUTS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/cosmic/com.system76.CosmicSett
 KB_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-clipboard/keybindings.json"
 BIN_PATH="$HOME/.local/bin/omarchy-clipboard"
 
-[[ -f $SHORTCUTS_FILE ]] || exit 0
-[[ -f $KB_FILE ]] || exit 0
+[[ -f $SHORTCUTS_FILE ]] || {
+  [[ "${1:-}" == "--list-external" ]] && echo "[]"
+  exit 0
+}
 
-cp "$SHORTCUTS_FILE" "$SHORTCUTS_FILE.bak"
-
-python3 - "$SHORTCUTS_FILE" "$KB_FILE" "$BIN_PATH" <<'PY'
-import json, re, sys
+python3 - "$SHORTCUTS_FILE" "$KB_FILE" "$BIN_PATH" "$@" <<'PY'
+import json, os, re, shutil, sys
 
 shortcuts_path, kb_path, bin_path = sys.argv[1:4]
-with open(kb_path, "r") as f:
-    kb = json.load(f)
+args = sys.argv[4:]
 
-g = kb.get("global", {})
+mode = "sync"
+override_combos = set()
+cli_combos = {}
+
+i = 0
+while i < len(args):
+    a = args[i]
+    if a == "--list-external":
+        mode = "list"
+    elif a == "--open" and i + 1 < len(args):
+        cli_combos["openClipboard"] = args[i + 1]
+        i += 1
+    elif a == "--ocr" and i + 1 < len(args):
+        cli_combos["ocrExtract"] = args[i + 1]
+        i += 1
+    elif a == "--open-ocr" and i + 1 < len(args):
+        cli_combos["clipboardAndOcr"] = args[i + 1]
+        i += 1
+    elif a == "--override" and i + 1 < len(args):
+        for c in args[i + 1].split(","):
+            c = c.strip()
+            if c:
+                override_combos.add(c)
+        i += 1
+    i += 1
+
+MANAGED_DESCS = {
+    "Omarchy Clipboard",
+    "COSMIC Clipboard",
+    "COSMIC Clipboard OCR",
+    "COSMIC Clipboard + OCR",
+}
+
+ENTRY_RE = re.compile(
+    r'(\s*\(\s*modifiers:\s*\[([^\]]*)\],\s*key:\s*"([^"]+)"(?:\s*,\s*description:\s*Some\("([^"]*)"\))?\s*,?\s*\)\s*:\s*([^,\n]+(?:\([^)]*\))?)\s*,?)',
+    re.MULTILINE,
+)
+
+def normalize_combo_from_ron(mods_raw, key_raw):
+    mods = []
+    raw_tokens = [t.strip() for t in mods_raw.split(",") if t.strip()]
+    has = {t.lower() for t in raw_tokens}
+    if "ctrl" in has or "control" in has: mods.append("Ctrl")
+    if "shift" in has: mods.append("Shift")
+    if "alt" in has: mods.append("Alt")
+    if "super" in has or "meta" in has: mods.append("Super")
+    k = key_raw.strip()
+    if len(k) == 1:
+        k = k.upper()
+    return "+".join(mods + [k])
+
+def to_ron_key(k):
+    if len(k) == 1:
+        return k.lower()
+    return k
+
+with open(shortcuts_path, "r") as f:
+    raw = f.read()
+
+if mode == "list":
+    ext = []
+    for m in ENTRY_RE.finditer(raw):
+        mods_raw, key_raw, desc, action = m.group(2), m.group(3), m.group(4), m.group(5).strip()
+        if desc in MANAGED_DESCS:
+            continue
+        if action == "Disable":
+            continue
+        combo = normalize_combo_from_ron(mods_raw, key_raw)
+        label = desc if desc else action
+        ext.append({"combo": combo, "label": label})
+    print(json.dumps(ext))
+    sys.exit(0)
+
+# Sync mode
+shutil.copy2(shortcuts_path, shortcuts_path + ".bak")
+
+g = {}
+if os.path.isfile(kb_path):
+    try:
+        with open(kb_path, "r") as f:
+            g = json.load(f).get("global", {})
+    except Exception:
+        g = {}
+
+for k, v in cli_combos.items():
+    g[k] = v
+
 actions = [
     ("COSMIC Clipboard", g.get("openClipboard", "Super+V"), f"{bin_path} toggle"),
     ("COSMIC Clipboard OCR", g.get("ocrExtract", "Super+Shift+S"), f"{bin_path} ocr"),
     ("COSMIC Clipboard + OCR", g.get("clipboardAndOcr", ""), f"{bin_path} open-ocr"),
 ]
 
-with open(shortcuts_path, "r") as f:
-    raw = f.read()
+norm_overrides = {c.lower() for c in override_combos}
 
-# Strip existing managed Omarchy Clipboard entries before re-adding configured ones.
-for desc, _, _ in actions:
-    pattern = re.compile(
-        r'\s*\(\s*modifiers:\s*\[[^\]]*\],\s*key:\s*"[^"]*",\s*description:\s*Some\("'
-        + re.escape(desc)
-        + r'"\),\s*\):\s*Spawn\("[^"]*"\),\n?',
-        re.MULTILINE,
-    )
-    raw = pattern.sub("\n", raw)
+def should_strip(m):
+    mods_raw, key_raw, desc, action = m.group(2), m.group(3), m.group(4), m.group(5).strip()
+    if desc in MANAGED_DESCS:
+        return True
+    if norm_overrides:
+        combo = normalize_combo_from_ron(mods_raw, key_raw)
+        if combo.lower() in norm_overrides:
+            return True
+    return False
+
+pieces = []
+last = 0
+for m in ENTRY_RE.finditer(raw):
+    if should_strip(m):
+        pieces.append(raw[last:m.start()])
+        last = m.end()
+pieces.append(raw[last:])
+raw = "".join(pieces)
 
 entries = []
 for desc, combo, cmd in actions:
@@ -48,7 +142,7 @@ for desc, combo, cmd in actions:
     parts = [p.strip() for p in combo.split("+") if p.strip()]
     if not parts:
         continue
-    key = parts[-1]
+    key = to_ron_key(parts[-1])
     mods = []
     for m in parts[:-1]:
         ml = m.lower()

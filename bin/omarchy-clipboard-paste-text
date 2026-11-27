@@ -47,8 +47,8 @@ copy_history_entry() {
 
 if [[ -n $history_index ]]; then
   copy_history_entry
-  if [[ $copy_only != "true" ]]; then
-    use_shift_insert=true
+  if [[ $copy_only != "true" && $use_universal != "true" && $use_shift_insert != "true" ]]; then
+    use_universal=true
   fi
 else
   text=${1:-}
@@ -60,14 +60,14 @@ if [[ $copy_only == "true" ]]; then
   exit
 fi
 
-sleep 0.15
+sleep 0.2
 
-# Universal paste presses SUPER + V's own action: Ctrl+Shift+V in terminals,
-# Ctrl+V everywhere else.
-if [[ $use_universal == "true" ]]; then
-  wtype -M ctrl -k v -m ctrl 2>/dev/null || wtype -M shift -k Insert -m shift 2>/dev/null || true
-elif [[ $use_shift_insert == "true" ]]; then
-  wtype -M shift -k Insert -m shift 2>/dev/null || true
+# Universal paste presses Ctrl+V (with delay so compositor processes modifier),
+# with fallback to Shift+Insert for terminal emulators.
+if [[ $use_shift_insert == "true" ]]; then
+  wtype -M shift -s 50 -k Insert -s 20 -m shift 2>/dev/null || true
+elif [[ $use_universal == "true" ]]; then
+  wtype -M ctrl -s 50 -k v -s 20 -m ctrl 2>/dev/null || wtype -M shift -s 50 -k Insert -s 20 -m shift 2>/dev/null || true
 else
-  wtype "$text" 2>/dev/null || true
+  wtype -M ctrl -s 50 -k v -s 20 -m ctrl 2>/dev/null || wtype "$text" 2>/dev/null || true
 fi
