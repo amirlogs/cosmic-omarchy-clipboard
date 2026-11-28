@@ -69,21 +69,51 @@ node --test tests/*.test.js
 | `wtype` | Wayland virtual keyboard simulation for paste automation |
 | `jq` | JSON parsing and serialization |
 | `perl` & `perl-JSON-PP` | UTF-8/UTF-16 encoding detection and sanitization |
+| `tesseract` & `tesseract-langpack-eng` | Local offline OCR engine & English language data (optional, for Screen OCR) |
+| `grim` & `slurp` | Wayland screen capture & region selector (optional, for Screen OCR) |
 
 ---
 
 ## Installation
 
-### 1. Install System Dependencies
+> **Download Page:** [https://amirlogs.github.io/cosmic-omarchy-clipboard/](https://amirlogs.github.io/cosmic-omarchy-clipboard/) · **Latest Release:** [GitHub Releases](https://github.com/amirlogs/cosmic-omarchy-clipboard/releases/latest)
 
-On Fedora 44, install the required packages:
+### 1. Install System Dependencies & OCR (`tesseract`)
 
+#### Fedora 44 (COSMIC)
 ```bash
-sudo dnf install -y quickshell wl-clipboard wtype jq perl-JSON-PP
+# Core dependencies + Screen OCR (tesseract, grim, slurp)
+sudo dnf install -y quickshell wl-clipboard wtype jq perl-JSON-PP tesseract tesseract-langpack-eng grim slurp
 ```
 
-### 2. Clone and Install
+#### Arch Linux
+```bash
+sudo pacman -S --needed quickshell wl-clipboard wtype jq perl tesseract tesseract-data-eng grim slurp
+```
 
+#### Ubuntu / Debian
+```bash
+sudo apt install -y wl-clipboard wtype jq libjson-pp-perl tesseract-ocr tesseract-ocr-eng grim slurp
+```
+
+> **Additional OCR Languages:** To recognize other languages with Tesseract, install the corresponding language pack (e.g. `sudo dnf install tesseract-langpack-deu tesseract-langpack-fra`), then verify with `tesseract --list-langs`.
+
+### 2. Install Omarchy Clipboard
+
+#### Option A: Quick Install via `curl` (Recommended — downloads latest GitHub Release)
+```bash
+curl -fsSL https://github.com/amirlogs/cosmic-omarchy-clipboard/releases/latest/download/install.sh | bash
+```
+
+#### Option B: Manual Release Download
+Download `cosmic-omarchy-clipboard.tar.gz` from the [Latest Release](https://github.com/amirlogs/cosmic-omarchy-clipboard/releases/latest), extract it, and run:
+```bash
+mkdir -p ~/.local/share/cosmic-omarchy-clipboard
+tar -xzf cosmic-omarchy-clipboard.tar.gz -C ~/.local/share/cosmic-omarchy-clipboard
+~/.local/share/cosmic-omarchy-clipboard/scripts/install.sh
+```
+
+#### Option C: Clone from Source
 ```bash
 git clone https://github.com/amirlogs/cosmic-omarchy-clipboard.git
 cd cosmic-omarchy-clipboard
@@ -91,24 +121,23 @@ cd cosmic-omarchy-clipboard
 ```
 
 The installer will:
-1. Symlink `bin/omarchy-clipboard` to `~/.local/bin/omarchy-clipboard`.
+1. Link `bin/omarchy-clipboard` to `~/.local/bin/omarchy-clipboard`.
 2. Register the application menu launcher in `~/.local/share/applications/`.
 3. Enable autostart on login in `~/.config/autostart/`.
-4. Configure the `Super + V` shortcut in COSMIC settings.
-5. Launch the background watcher service.
+4. Start the background watcher daemon.
+
+> **Note:** The installer **does not force `Super + V`** or overwrite your existing COSMIC shortcuts. If you want it to set `Super + V` automatically, pass `--with-shortcut` (e.g. `... | bash -s -- --with-shortcut`).
 
 ---
 
 ## Keyboard Shortcut Configuration
 
-The installer automatically configures `Super + V` in COSMIC's custom shortcuts file (`~/.config/cosmic/com.system76.CosmicSettings.Shortcuts/v1/custom`).
-
-If you prefer to configure or adjust the shortcut manually in the COSMIC Settings UI:
+You can bind any shortcut you prefer either inside **Clipboard Settings → Keyboard & Shortcuts** (`Ctrl + ,`) or in the COSMIC Settings UI:
 1. Open **Settings** → **Keyboard** → **Customize Shortcuts**.
 2. Click **Add Custom Shortcut**.
 3. Name: `Clipboard`
 4. Command: `omarchy-clipboard toggle`
-5. Shortcut: `Super + V`
+5. Shortcut: your preferred key combination (e.g. `Super + V`)
 
 ---
 

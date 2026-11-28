@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Omarchy Clipboard for COSMIC Desktop</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #171a23;
+      --surface-2: #1e222e;
+      --border: rgba(255, 255, 255, 0.1);
+      --text: #e6e9f2;
+      --muted: #9aa3b5;
+      --accent: #7aa2f7;
+      --accent-soft: rgba(122, 162, 247, 0.14);
+      --green: #9ece6a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(circle at top, #181c28 0%, var(--bg) 55%);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 56px 20px 80px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(122, 162, 247, 0.35);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      line-height: 1.15;
+      margin: 0 0 14px;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 1.08rem;
+      max-width: 650px;
+      margin: 0 0 28px;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 42px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 15px;
+      text-decoration: none;
+      transition: transform 0.12s ease, background 0.15s ease, border-color 0.15s ease;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-primary {
+      background: var(--accent);
+      color: #0b0e14;
+    }
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { border-color: rgba(255, 255, 255, 0.25); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 1.2rem;
+    }
+    p { margin: 0 0 12px; color: var(--muted); }
+    p:last-child { margin-bottom: 0; }
+    .code-wrap {
+      position: relative;
+      background: #0b0d12;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      margin: 12px 0;
+    }
+    pre {
+      margin: 0;
+      font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+      font-size: 13.5px;
+      color: #d8dee9;
+    }
+    .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .mini {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+    }
+    .mini strong { display: block; margin-bottom: 4px; font-size: 14px; }
+    .mini span { font-size: 13px; color: var(--muted); }
+    footer {
+      margin-top: 40px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+    code {
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-size: 0.9em;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <span class="badge">Wayland · COSMIC Desktop · Quickshell</span>
+    <h1>Omarchy Clipboard for COSMIC</h1>
+    <p class="subtitle">
+      A native Wayland clipboard manager with frosted two-pane UI, inline text/Vim editor,
+      image previews, and local screen-region OCR.
+    </p>
+
+    <div class="actions">
+      <a class="btn btn-primary" href="https://github.com/amirlogs/cosmic-omarchy-clipboard/releases/latest/download/cosmic-omarchy-clipboard.tar.gz">
+        Download Latest Release (.tar.gz)
+      </a>
+      <a class="btn btn-secondary" href="https://github.com/amirlogs/cosmic-omarchy-clipboard/releases/latest">
+        Release Notes &amp; Checksums
+      </a>
+      <a class="btn btn-secondary" href="https://github.com/amirlogs/cosmic-omarchy-clipboard">
+        GitHub Repo
+      </a>
+    </div>
+
+    <section class="card">
+      <h2>Quick Install via curl (No git clone required)</h2>
+      <p>Downloads the latest GitHub release into <code>~/.local/share/cosmic-omarchy-clipboard</code>, links <code>omarchy-clipboard</code>, and starts the daemon without overwriting your shortcuts:</p>
+      <div class="code-wrap">
+        <button class="copy-btn" onclick="copyCode('curl-cmd', this)">Copy</button>
+        <pre id="curl-cmd">curl -fsSL https://github.com/amirlogs/cosmic-omarchy-clipboard/releases/latest/download/install.sh | bash</pre>
+      </div>
+      <p>Want the optional <code>Super + V</code> COSMIC shortcut configured automatically? Pass <code>--with-shortcut</code>:</p>
+      <div class="code-wrap">
+        <button class="copy-btn" onclick="copyCode('curl-sc', this)">Copy</button>
+        <pre id="curl-sc">curl -fsSL https://github.com/amirlogs/cosmic-omarchy-clipboard/releases/latest/download/install.sh | bash -s -- --with-shortcut</pre>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Dependencies &amp; OCR (Tesseract) Setup</h2>
+      <p>Install the core Wayland runtime packages plus <strong>Tesseract OCR</strong> (<code>tesseract</code> + language pack + <code>grim</code> + <code>slurp</code> for screen-region text extraction):</p>
+      <div class="code-wrap">
+        <button class="copy-btn" onclick="copyCode('dnf-cmd', this)">Copy</button>
+        <pre id="dnf-cmd"># Fedora 44 / COSMIC
+sudo dnf install -y quickshell wl-clipboard wtype jq perl-JSON-PP tesseract tesseract-langpack-eng grim slurp</pre>
+      </div>
+      <div class="code-wrap">
+        <button class="copy-btn" onclick="copyCode('arch-cmd', this)">Copy</button>
+        <pre id="arch-cmd"># Arch Linux
+sudo pacman -S --needed quickshell wl-clipboard wtype jq perl tesseract tesseract-data-eng grim slurp</pre>
+      </div>
+      <div class="code-wrap">
+        <button class="copy-btn" onclick="copyCode('apt-cmd', this)">Copy</button>
+        <pre id="apt-cmd"># Ubuntu / Debian
+sudo apt install -y wl-clipboard wtype jq libjson-pp-perl tesseract-ocr tesseract-ocr-eng grim slurp</pre>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Highlights</h2>
+      <div class="grid">
+        <div class="mini">
+          <strong>Auto-Paste or Copy-Only</strong>
+          <span>Defaults to copy-only (<code>Enter</code>); press <code>Shift+Enter</code> to paste, or toggle Auto-paste in Settings.</span>
+        </div>
+        <div class="mini">
+          <strong>Inline Editor &amp; Vim Mode</strong>
+          <span>Edit entries in place with undo/redo, search, or full Vim motions &amp; text objects.</span>
+        </div>
+        <div class="mini">
+          <strong>Local Screen OCR</strong>
+          <span>Select any region via <code>grim</code> + <code>slurp</code> and extract text offline with <code>tesseract</code>.</span>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <a href="https://github.com/amirlogs/cosmic-omarchy-clipboard/releases/latest">Latest Release</a> ·
+      <a href="https://github.com/amirlogs/cosmic-omarchy-clipboard/blob/main/README.md">Documentation</a> ·
+      MIT License
+    </footer>
+  </main>
+
+  <script>
+    function copyCode(id, btn) {
+      const text = document.getElementById(id).innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const prev = btn.textContent;
+        btn.textContent = "Copied!";
+        setTimeout(() => { btn.textContent = prev; }, 1500);
+      });
+    }
+  </script>
+</body>
+</html>
